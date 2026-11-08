@@ -12,11 +12,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Android screen-share (Go Live) using MediaProjection.
+ * Android screen-share (Go Live).
  *
- * Full WebRTC H.264 publish to the Banter SFU is desktop-parity work; this
- * manager owns the capture consent + local "sharing" state so the call UI and
- * `/v1/voice/flags` `screen` bit stay in sync. Frames can later feed an RTC track.
+ * Consent → [ScreenShareService] (mediaProjection FGS + VirtualDisplay).
+ * That is what makes Android show the red status-bar share pill, same as Discord.
  */
 @Singleton
 class ScreenShareManager @Inject constructor(
@@ -27,8 +26,13 @@ class ScreenShareManager @Inject constructor(
     private val _isSharing = MutableStateFlow(false)
     val isSharing: StateFlow<Boolean> = _isSharing
 
-    private var resultCode: Int = Activity.RESULT_CANCELED
-    private var resultData: Intent? = null
+    init {
+        // Bridge service lifecycle → DI singleton state.
+        serviceSharingCallback = { active ->
+            _isSharing.value = active
+            Log.i(TAG, if (active) "Go Live active (system share indicator on)" else "Go Live stopped")
+        }
+    }
 
     fun createScreenCaptureIntent(): Intent {
         val mpm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -36,11 +40,8 @@ class ScreenShareManager @Inject constructor(
     }
 
     fun onPermissionResult(resultCode: Int, data: Intent?) {
-        this.resultCode = resultCode
-        this.resultData = data
         if (resultCode == Activity.RESULT_OK && data != null) {
-            _isSharing.value = true
-            Log.i(TAG, "Screen share permission granted — Go Live active")
+            ScreenShareService.start(context, resultCode, data)
         } else {
             _isSharing.value = false
             Log.w(TAG, "Screen share permission denied")
@@ -48,11 +49,20 @@ class ScreenShareManager @Inject constructor(
     }
 
     fun stop() {
+        ScreenShareService.stop(context)
         _isSharing.value = false
-        resultData = null
-        resultCode = Activity.RESULT_CANCELED
-        Log.i(TAG, "Screen share stopped")
     }
 
-    fun hasProjection(): Boolean = resultCode == Activity.RESULT_OK && resultData != null
+    companion object {
+        @Volatile
+        private var serviceSharingCallback: ((Boolean) -> Unit)? = null
+
+        fun notifyStartedFromService() {
+            serviceSharingCallback?.invoke(true)
+        }
+
+        fun notifyStoppedFromService() {
+            serviceSharingCallback?.invoke(false)
+        }
+    }
 }

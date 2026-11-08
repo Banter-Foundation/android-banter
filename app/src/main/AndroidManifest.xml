@@ -32,6 +32,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Active MediaProjection FGS → system red status-bar share pill -->
+        <service
+            android:name=".media.ScreenShareService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
     </application>
 
 </manifest>
