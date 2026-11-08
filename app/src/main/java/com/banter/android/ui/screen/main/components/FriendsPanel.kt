@@ -1,0 +1,260 @@
+package com.banter.android.ui.screen.main.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.banter.android.data.model.Friend
+import com.banter.android.data.model.FriendRequest
+import com.banter.android.data.model.PresenceEntry
+import com.banter.android.ui.theme.BanterColors
+
+enum class FriendsTab { ALL, ONLINE, PENDING }
+
+@Composable
+fun FriendsPanel(
+    friends: List<Friend>,
+    friendRequests: List<FriendRequest>,
+    presence: Map<Long, PresenceEntry>,
+    onOpenDm: (Long) -> Unit,
+    onAcceptRequest: (Long) -> Unit,
+    onDeclineRequest: (Long) -> Unit
+) {
+    var tab by remember { mutableStateOf(FriendsTab.ONLINE) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Top bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(BanterColors.Background)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.People, contentDescription = null,
+                tint = BanterColors.TextSecondary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Friends", fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                color = BanterColors.TextPrimary)
+            Spacer(Modifier.width(16.dp))
+            FriendsTab.values().forEach { t ->
+                val isSelected = t == tab
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (isSelected) BanterColors.ChannelRowActive else Color.Transparent)
+                        .clickable { tab = t }
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    val label = when (t) {
+                        FriendsTab.ALL -> "All"
+                        FriendsTab.ONLINE -> "Online"
+                        FriendsTab.PENDING -> "Pending${if (friendRequests.isNotEmpty()) " (${friendRequests.size})" else ""}"
+                    }
+                    Text(label, fontSize = 13.sp,
+                        color = if (isSelected) BanterColors.TextPrimary else BanterColors.TextSecondary,
+                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal)
+                }
+                Spacer(Modifier.width(4.dp))
+            }
+        }
+        HorizontalDivider(color = BanterColors.Divider)
+
+        // Content
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp)
+        ) {
+            when (tab) {
+                FriendsTab.ALL -> {
+                    val sorted = friends.sortedBy { it.displayName }
+                    item {
+                        Text("ALL FRIENDS — ${sorted.size}", fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold, color = BanterColors.CategoryText,
+                            letterSpacing = 0.5.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    items(sorted) { friend ->
+                        FriendRow(
+                            friend = friend,
+                            presenceState = presence[friend.id]?.state ?: "offline",
+                            customStatus = presence[friend.id]?.customStatus,
+                            onOpenDm = onOpenDm
+                        )
+                    }
+                }
+                FriendsTab.ONLINE -> {
+                    val online = friends.filter {
+                        (presence[it.id]?.state ?: "offline") != "offline"
+                    }.sortedBy { it.displayName }
+                    item {
+                        Text("ONLINE — ${online.size}", fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold, color = BanterColors.CategoryText,
+                            letterSpacing = 0.5.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    if (online.isEmpty()) {
+                        item {
+                            EmptyFriendsMessage("All your friends are currently offline")
+                        }
+                    }
+                    items(online) { friend ->
+                        FriendRow(
+                            friend = friend,
+                            presenceState = presence[friend.id]?.state ?: "online",
+                            customStatus = presence[friend.id]?.customStatus,
+                            onOpenDm = onOpenDm
+                        )
+                    }
+                }
+                FriendsTab.PENDING -> {
+                    if (friendRequests.isEmpty()) {
+                        item {
+                            EmptyFriendsMessage("No pending friend requests")
+                        }
+                    } else {
+                        item {
+                            Text("PENDING — ${friendRequests.size}", fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold, color = BanterColors.CategoryText,
+                                letterSpacing = 0.5.sp, modifier = Modifier.padding(bottom = 8.dp))
+                        }
+                        items(friendRequests) { req ->
+                            FriendRequestRow(
+                                request = req,
+                                onAccept = { onAcceptRequest(req.id) },
+                                onDecline = { onDeclineRequest(req.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FriendRow(
+    friend: Friend,
+    presenceState: String,
+    customStatus: String?,
+    onOpenDm: (Long) -> Unit
+) {
+    HorizontalDivider(color = BanterColors.Divider)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenDm(friend.id) }
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(avatarColor(friend.id)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(friend.displayName.take(1).uppercase(), color = Color.White,
+                    fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(BanterColors.Background)
+                    .padding(2.dp)
+                    .clip(CircleShape)
+                    .background(presenceColor(presenceState))
+                    .align(Alignment.BottomEnd)
+            )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(friend.displayName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                color = BanterColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                customStatus ?: presenceState.replaceFirstChar { it.uppercase() },
+                fontSize = 13.sp, color = BanterColors.TextSecondary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        IconButton(onClick = { onOpenDm(friend.id) }) {
+            Icon(Icons.Filled.Message, contentDescription = "Message",
+                tint = BanterColors.TextSecondary)
+        }
+    }
+}
+
+@Composable
+private fun FriendRequestRow(
+    request: FriendRequest,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
+) {
+    HorizontalDivider(color = BanterColors.Divider)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(avatarColor(request.from.id)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(request.from.displayName.take(1).uppercase(), color = Color.White,
+                fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(request.from.displayName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                color = BanterColors.TextPrimary)
+            Text("Incoming Friend Request", fontSize = 12.sp, color = BanterColors.TextSecondary)
+        }
+
+        IconButton(onClick = onAccept) {
+            Icon(Icons.Filled.Check, contentDescription = "Accept",
+                tint = BanterColors.Green)
+        }
+        IconButton(onClick = onDecline) {
+            Icon(Icons.Filled.Close, contentDescription = "Decline",
+                tint = BanterColors.Red)
+        }
+    }
+}
+
+@Composable
+private fun EmptyFriendsMessage(message: String) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(message, color = BanterColors.TextMuted, fontSize = 14.sp)
+    }
+}
