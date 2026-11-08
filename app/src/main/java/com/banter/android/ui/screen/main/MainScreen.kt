@@ -1,6 +1,7 @@
 package com.banter.android.ui.screen.main
 
-import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,12 +20,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.banter.android.data.model.VoiceFlags
 import com.banter.android.ui.screen.main.components.*
+import com.banter.android.ui.screen.settings.SettingsScreen
 import com.banter.android.ui.theme.BanterColors
 
 @Composable
@@ -36,7 +40,9 @@ fun MainScreen(
     var showCreateServer by remember { mutableStateOf(false) }
     var showJoinServer by remember { mutableStateOf(false) }
     var showAddFriend by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var homePane by remember { mutableStateOf(HomePane.MESSAGES) }
+    val context = LocalContext.current
 
     val screenShareLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -45,18 +51,53 @@ fun MainScreen(
         viewModel.onScreenSharePermissionHandled()
     }
 
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.onCameraPermissionResult(granted)
+    }
+
     LaunchedEffect(uiState.pendingScreenSharePermission) {
         if (uiState.pendingScreenSharePermission) {
             screenShareLauncher.launch(viewModel.screenShareManager.createScreenCaptureIntent())
         }
     }
 
-    BackHandler(enabled = (uiState.callOpen && !uiState.callMinimized) || uiState.inConversation || uiState.showMembers) {
+    LaunchedEffect(uiState.pendingCameraPermission) {
+        if (uiState.pendingCameraPermission) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                viewModel.onCameraPermissionResult(true)
+            } else {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
+
+    BackHandler(
+        enabled = showSettings || (uiState.callOpen && !uiState.callMinimized) ||
+            uiState.inConversation || uiState.showMembers
+    ) {
         when {
+            showSettings -> showSettings = false
             uiState.callOpen && !uiState.callMinimized -> viewModel.minimizeCall()
             uiState.showMembers -> viewModel.toggleMembers()
             uiState.inConversation -> viewModel.leaveConversation()
         }
+    }
+
+    if (showSettings) {
+        SettingsScreen(
+            onBack = { showSettings = false },
+            onLogout = {
+                showSettings = false
+                viewModel.logout(onLogout)
+            }
+        )
+        return
     }
 
     Box(
@@ -144,6 +185,7 @@ fun MainScreen(
                                         onToggleMute = { viewModel.toggleMute() },
                                         onToggleDeafen = { viewModel.toggleDeafen() },
                                         onLogout = { viewModel.logout(onLogout) },
+                                        onOpenSettings = { showSettings = true },
                                         onAddFriendClick = { showAddFriend = true },
                                         hideHeader = true,
                                         modifier = Modifier.weight(1f)
@@ -169,6 +211,7 @@ fun MainScreen(
                                         onToggleMute = { viewModel.toggleMute() },
                                         onToggleDeafen = { viewModel.toggleDeafen() },
                                         onLogout = { viewModel.logout(onLogout) },
+                                        onOpenSettings = { showSettings = true },
                                         onAddFriendClick = { showAddFriend = true },
                                         hideHeader = true,
                                         userBarOnly = true,
@@ -186,6 +229,7 @@ fun MainScreen(
                                 onToggleMute = { viewModel.toggleMute() },
                                 onToggleDeafen = { viewModel.toggleDeafen() },
                                 onLogout = { viewModel.logout(onLogout) },
+                                onOpenSettings = { showSettings = true },
                                 onAddFriendClick = { showAddFriend = true },
                                 modifier = Modifier.weight(1f)
                             )
@@ -220,6 +264,7 @@ fun MainScreen(
                 CallKind.VoiceChannel -> "Voice Connected"
                 CallKind.DmCall -> if (uiState.callPhase == CallPhaseUi.Active) "Call in progress" else "Calling…"
             }
+            val remoteFrames by viewModel.rtcManager.remoteFrames.collectAsState()
             CallScreen(
                 title = title,
                 subtitle = subtitle,
@@ -233,6 +278,13 @@ fun MainScreen(
                     screen = uiState.hasScreen
                 ),
                 isScreenSharing = uiState.hasScreen,
+                screenShareManager = viewModel.screenShareManager,
+                remoteFrames = remoteFrames,
+                focusedStreamerId = viewModel.focusedStreamerId(),
+                liveStreamerIds = viewModel.liveStreamerIds(),
+                cameraFrontFacing = uiState.cameraFrontFacing,
+                mirrorCamera = uiState.mirrorCamera,
+                onCycleStreamer = { viewModel.cycleFocusedStreamer() },
                 onToggleMute = { viewModel.toggleMute() },
                 onToggleDeafen = { viewModel.toggleDeafen() },
                 onToggleCamera = { viewModel.toggleCamera() },

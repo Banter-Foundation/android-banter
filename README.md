@@ -2,11 +2,14 @@
 
 Native Android client for [Banter](https://github.com/Banter-Foundation/Banter). Kotlin + Jetpack Compose, Discord-like dark UI.
 
-## Alpha 3
+## Alpha 5
 
-Tag: `v1.0.0-alpha.3`
+Tag: `v1.0.0-alpha.5`
 
-Phone-call UI for voice channels and DM calls (mute / deafen / camera / Go Live screen share / hang up). BFMD message rendering (Banter’s Better Formatted Markdown, not CommonMark). MediaProjection consent for screen share + `screen` voice flag.
+- **Watch other streams**: WebRTC SFU/P2P session + `SubscribeLayer` so remote Go Live / camera tiles appear on the call stage (cycle when multiple people are live).
+- Local camera preview (CameraX) and local screen-share preview while you’re Go Live.
+- Settings page (account, server URL, front/mirror camera) from the user bar gear / avatar.
+- System red status-bar share pill via MediaProjection FGS (Alpha 4).
 
 Install the APK from [Releases](https://github.com/Banter-Foundation/android-banter/releases), or build locally:
 
@@ -22,6 +25,8 @@ Minimum Android 8.0 (API 26). Point the app at a running Banter server (`host:39
 
 - Login / register against any Banter server
 - Server rail, channel sidebar, member list
-- Text chat + DMs with live WebSocket updates
+- Text chat + DMs with live WebSocket updates (BFMD)
 - Friends (online / all / pending)
-- Voice channel join / leave / mute / deafen UI
+- Phone-call VC / DM UI: mute, deafen, camera, Go Live
+- Watch remote Go Live / camera over WebRTC
+- Settings (host URL, camera prefs, log out)

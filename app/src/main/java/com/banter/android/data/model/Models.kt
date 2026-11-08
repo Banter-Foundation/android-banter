@@ -267,3 +267,74 @@ data class Emote(
     val name: String,
     val kind: String = "emote"
 )
+
+/** `GET /v1/ice` — STUN/TURN for PeerConnections (off-LAN needs TURN). */
+data class IceConfig(
+    val stun: String = "stun:stun.l.google.com:19302",
+    val turn: IceTurn? = null,
+    @SerializedName("advertise_ip") val advertiseIp: String = "",
+    @SerializedName("udp_min") val udpMin: Long? = null,
+    @SerializedName("udp_max") val udpMax: Long? = null
+)
+
+data class IceTurn(
+    val urls: String = "",
+    val username: String = "",
+    val credential: String = ""
+)
+
+/** Banter media place — serde externally-tagged newtype (`{"VoiceChannel":9}`). */
+sealed class MediaPlace {
+    data class VoiceChannel(val id: Long) : MediaPlace()
+    data class DirectCall(val id: Long) : MediaPlace()
+
+    fun toJsonObject(): com.google.gson.JsonObject {
+        val o = com.google.gson.JsonObject()
+        when (this) {
+            is VoiceChannel -> o.addProperty("VoiceChannel", id)
+            is DirectCall -> o.addProperty("DirectCall", id)
+        }
+        return o
+    }
+
+    companion object {
+        fun fromJson(obj: com.google.gson.JsonObject?): MediaPlace? {
+            if (obj == null) return null
+            if (obj.has("VoiceChannel")) return VoiceChannel(obj.get("VoiceChannel").asLong)
+            if (obj.has("DirectCall")) return DirectCall(obj.get("DirectCall").asLong)
+            return null
+        }
+    }
+}
+
+enum class MediaKind(val wire: String) {
+    UserAudio("user_audio"),
+    StreamAudio("stream_audio"),
+    Camera("camera"),
+    Screen("screen");
+
+    companion object {
+        fun fromWire(value: String?): MediaKind = when (value) {
+            "stream_audio" -> StreamAudio
+            "camera" -> Camera
+            "screen" -> Screen
+            else -> UserAudio
+        }
+    }
+}
+
+enum class LayerId(val wire: String) {
+    Full("full"),
+    Half("half"),
+    Quarter("quarter"),
+    Off("off");
+
+    companion object {
+        fun fromWire(value: String?): LayerId = when (value) {
+            "half" -> Half
+            "quarter" -> Quarter
+            "off" -> Off
+            else -> Full
+        }
+    }
+}

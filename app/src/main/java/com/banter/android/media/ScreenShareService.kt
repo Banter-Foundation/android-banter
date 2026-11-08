@@ -9,12 +9,17 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -32,6 +37,8 @@ class ScreenShareService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private var captureThread: HandlerThread? = null
+    private var lastPreviewAtMs: Long = 0L
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -126,13 +133,21 @@ class ScreenShareService : Service() {
             val density = metrics.densityDpi
 
             // ImageReader keeps the VirtualDisplay alive so the system
-            // status-bar share indicator stays visible. Frames are drained
-            // (WebRTC encode can replace this later).
-            val reader = ImageReader.newInstance(width, height, android.graphics.PixelFormat.RGBA_8888, 2)
+            // status-bar share indicator stays visible, and feeds a local
+            // stream preview (WebRTC encode can replace drain later).
+            val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
             imageReader = reader
+            val thread = HandlerThread("BanterScreenCapture").also { it.start() }
+            captureThread = thread
+            val handler = Handler(thread.looper)
             reader.setOnImageAvailableListener({ r ->
-                r.acquireLatestImage()?.close()
-            }, null)
+                val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
+                try {
+                    maybePublishPreview(image, width, height)
+                } finally {
+                    image.close()
+                }
+            }, handler)
 
             virtualDisplay = projection.createVirtualDisplay(
                 "BanterGoLive",
@@ -161,6 +176,36 @@ class ScreenShareService : Service() {
         ScreenShareManager.notifyStoppedFromService()
     }
 
+    private fun maybePublishPreview(image: Image, width: Int, height: Int) {
+        val now = System.currentTimeMillis()
+        // ~4 fps is enough for a local "you're sharing" preview.
+        if (now - lastPreviewAtMs < 250L) return
+        lastPreviewAtMs = now
+        try {
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * width
+            val full = Bitmap.createBitmap(
+                width + rowPadding / pixelStride,
+                height,
+                Bitmap.Config.ARGB_8888
+            )
+            buffer.rewind()
+            full.copyPixelsFromBuffer(buffer)
+            val cropped = if (full.width == width) full else Bitmap.createBitmap(full, 0, 0, width, height)
+            if (cropped !== full) full.recycle()
+            val previewW = 540
+            val previewH = (previewW.toFloat() * height / width).toInt().coerceAtLeast(1)
+            val preview = Bitmap.createScaledBitmap(cropped, previewW, previewH, true)
+            if (preview !== cropped) cropped.recycle()
+            ScreenShareManager.publishPreviewFrame(preview)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Preview frame failed", t)
+        }
+    }
+
     private fun tearDownCapture() {
         try {
             virtualDisplay?.release()
@@ -172,6 +217,11 @@ class ScreenShareService : Service() {
         } catch (_: Throwable) {
         }
         imageReader = null
+        try {
+            captureThread?.quitSafely()
+        } catch (_: Throwable) {
+        }
+        captureThread = null
         try {
             mediaProjection?.unregisterCallback(projectionCallback)
             mediaProjection?.stop()

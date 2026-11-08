@@ -3,6 +3,7 @@ package com.banter.android.media
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.projection.MediaProjectionManager
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -16,6 +17,7 @@ import javax.inject.Singleton
  *
  * Consent → [ScreenShareService] (mediaProjection FGS + VirtualDisplay).
  * That is what makes Android show the red status-bar share pill, same as Discord.
+ * Service also publishes downscaled frames for the in-call stream preview.
  */
 @Singleton
 class ScreenShareManager @Inject constructor(
@@ -26,11 +28,25 @@ class ScreenShareManager @Inject constructor(
     private val _isSharing = MutableStateFlow(false)
     val isSharing: StateFlow<Boolean> = _isSharing
 
+    private val _previewFrame = MutableStateFlow<Bitmap?>(null)
+    val previewFrame: StateFlow<Bitmap?> = _previewFrame
+
     init {
         // Bridge service lifecycle → DI singleton state.
         serviceSharingCallback = { active ->
             _isSharing.value = active
+            if (!active) {
+                _previewFrame.value?.recycle()
+                _previewFrame.value = null
+            }
             Log.i(TAG, if (active) "Go Live active (system share indicator on)" else "Go Live stopped")
+        }
+        servicePreviewCallback = { bitmap ->
+            val previous = _previewFrame.value
+            _previewFrame.value = bitmap
+            if (previous != null && previous !== bitmap && !previous.isRecycled) {
+                previous.recycle()
+            }
         }
     }
 
@@ -51,11 +67,16 @@ class ScreenShareManager @Inject constructor(
     fun stop() {
         ScreenShareService.stop(context)
         _isSharing.value = false
+        _previewFrame.value?.recycle()
+        _previewFrame.value = null
     }
 
     companion object {
         @Volatile
         private var serviceSharingCallback: ((Boolean) -> Unit)? = null
+
+        @Volatile
+        private var servicePreviewCallback: ((Bitmap) -> Unit)? = null
 
         fun notifyStartedFromService() {
             serviceSharingCallback?.invoke(true)
@@ -63,6 +84,10 @@ class ScreenShareManager @Inject constructor(
 
         fun notifyStoppedFromService() {
             serviceSharingCallback?.invoke(false)
+        }
+
+        fun publishPreviewFrame(bitmap: Bitmap) {
+            servicePreviewCallback?.invoke(bitmap)
         }
     }
 }

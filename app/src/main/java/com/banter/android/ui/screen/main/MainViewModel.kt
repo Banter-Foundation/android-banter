@@ -6,6 +6,7 @@ import com.banter.android.data.api.WebSocketManager
 import com.banter.android.data.local.SessionStore
 import com.banter.android.data.model.*
 import com.banter.android.data.repository.*
+import com.banter.android.media.BanterRtcManager
 import com.banter.android.media.ScreenShareManager
 import com.banter.android.ui.screen.main.components.CallKind
 import com.banter.android.ui.screen.main.components.CallParticipant
@@ -42,6 +43,9 @@ data class MainUiState(
     val isDeafened: Boolean = false,
     val hasCamera: Boolean = false,
     val hasScreen: Boolean = false,
+    val cameraFrontFacing: Boolean = true,
+    val mirrorCamera: Boolean = true,
+    val pendingCameraPermission: Boolean = false,
     val activeTab: MainTab = MainTab.HOME,
     val inConversation: Boolean = false,
     val showMembers: Boolean = false,
@@ -51,7 +55,9 @@ data class MainUiState(
     val callKind: CallKind = CallKind.VoiceChannel,
     val callPhase: CallPhaseUi = CallPhaseUi.Connecting,
     val activeDmCall: CallSnapshot? = null,
-    val pendingScreenSharePermission: Boolean = false
+    val pendingScreenSharePermission: Boolean = false,
+    /** Featured remote Go Live publisher (cycle with watch controls). */
+    val focusedStreamerId: Long? = null
 )
 
 enum class MainTab { HOME, SERVERS }
@@ -65,7 +71,8 @@ class MainViewModel @Inject constructor(
     private val voiceRepository: VoiceRepository,
     private val authRepository: AuthRepository,
     val webSocketManager: WebSocketManager,
-    val screenShareManager: ScreenShareManager
+    val screenShareManager: ScreenShareManager,
+    val rtcManager: BanterRtcManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -78,12 +85,16 @@ class MainViewModel @Inject constructor(
             val displayName = sessionStore.displayName.first() ?: username
             val token = sessionStore.token.first() ?: ""
             val serverUrl = sessionStore.serverUrl.first() ?: "http://127.0.0.1:3970"
+            val cameraFront = sessionStore.cameraFrontFacing.first()
+            val mirror = sessionStore.mirrorCamera.first()
 
             _uiState.update {
                 it.copy(
                     currentUserId = userId,
                     currentUsername = username,
-                    currentDisplayName = displayName
+                    currentDisplayName = displayName,
+                    cameraFrontFacing = cameraFront,
+                    mirrorCamera = mirror
                 )
             }
 
@@ -98,9 +109,31 @@ class MainViewModel @Inject constructor(
                     }
                 }
             }
+            viewModelScope.launch {
+                sessionStore.cameraFrontFacing.collect { front ->
+                    _uiState.update { it.copy(cameraFrontFacing = front) }
+                }
+            }
+            viewModelScope.launch {
+                sessionStore.mirrorCamera.collect { mirrorCam ->
+                    _uiState.update { it.copy(mirrorCamera = mirrorCam) }
+                }
+            }
             loadServers()
             loadDms()
             loadFriends()
+            // Re-SubscribeLayer every 2s while seated so late Go Live gets an IDR.
+            viewModelScope.launch {
+                while (true) {
+                    kotlinx.coroutines.delay(2_000)
+                    val s = _uiState.value
+                    if (s.inVoiceChannelId != null ||
+                        (s.activeDmCall != null && s.callPhase == CallPhaseUi.Active)
+                    ) {
+                        syncRemoteSubscriptions()
+                    }
+                }
+            }
         }
     }
 
@@ -140,6 +173,8 @@ class MainViewModel @Inject constructor(
                                 hasScreen = self?.flags?.screen ?: state.hasScreen
                             )
                         }
+                        syncRtcSession()
+                        syncRemoteSubscriptions()
                     }
                     is ServerEvent.Call -> {
                         val call = event.call
@@ -167,19 +202,26 @@ class MainViewModel @Inject constructor(
                                 hasScreen = if (isCaller) call.callerFlags.screen else call.calleeFlags.screen
                             )
                         }
+                        syncRtcSession()
+                        syncRemoteSubscriptions()
                     }
                     is ServerEvent.CallEnded -> {
                         if (_uiState.value.activeDmCall?.dmId == event.dmId) {
                             screenShareManager.stop()
+                            if (_uiState.value.inVoiceChannelId == null) {
+                                rtcManager.stop()
+                            }
                             _uiState.update {
                                 it.copy(
                                     activeDmCall = null,
                                     callOpen = it.inVoiceChannelId != null,
                                     callKind = if (it.inVoiceChannelId != null) CallKind.VoiceChannel else it.callKind,
                                     callPhase = CallPhaseUi.Active,
-                                    hasScreen = false
+                                    hasScreen = false,
+                                    focusedStreamerId = null
                                 )
                             }
+                            syncRtcSession()
                         }
                     }
                     is ServerEvent.FriendRequestEvent -> {
@@ -398,6 +440,7 @@ class MainViewModel @Inject constructor(
                         activeDmCall = null
                     )
                 }
+                syncRtcSession()
             }
         }
     }
@@ -406,15 +449,20 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             screenShareManager.stop()
             voiceRepository.leave().onSuccess {
+                if (_uiState.value.activeDmCall == null) {
+                    rtcManager.stop()
+                }
                 _uiState.update {
                     it.copy(
                         inVoiceChannelId = null,
                         inVoiceChannelName = "",
                         callOpen = it.activeDmCall != null,
                         hasScreen = false,
-                        hasCamera = false
+                        hasCamera = false,
+                        focusedStreamerId = null
                     )
                 }
+                syncRtcSession()
             }
         }
     }
@@ -448,6 +496,7 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             dmRepository.acceptCall(dmId).onSuccess {
                 _uiState.update { it.copy(callPhase = CallPhaseUi.Active) }
+                syncRtcSession()
             }
         }
     }
@@ -457,9 +506,11 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             dmRepository.declineCall(dmId)
             screenShareManager.stop()
+            if (_uiState.value.inVoiceChannelId == null) rtcManager.stop()
             _uiState.update {
                 it.copy(activeDmCall = null, callOpen = it.inVoiceChannelId != null, hasScreen = false)
             }
+            syncRtcSession()
         }
     }
 
@@ -468,10 +519,112 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             dmRepository.endCall(dmId)
             screenShareManager.stop()
+            if (_uiState.value.inVoiceChannelId == null) rtcManager.stop()
             _uiState.update {
-                it.copy(activeDmCall = null, callOpen = it.inVoiceChannelId != null, hasScreen = false)
+                it.copy(
+                    activeDmCall = null,
+                    callOpen = it.inVoiceChannelId != null,
+                    hasScreen = false,
+                    focusedStreamerId = null
+                )
+            }
+            syncRtcSession()
+        }
+    }
+
+    /** Live Go Live publishers in the current call (remote + self). */
+    fun liveStreamerIds(): List<Long> {
+        val state = _uiState.value
+        val me = state.currentUserId
+        val ids = linkedSetOf<Long>()
+        when (state.callKind) {
+            CallKind.VoiceChannel -> {
+                val channelId = state.inVoiceChannelId ?: return emptyList()
+                for (m in state.voiceByChannel[channelId].orEmpty()) {
+                    if (m.flags.screen) ids += m.userId
+                }
+            }
+            CallKind.DmCall -> {
+                for (p in callParticipants()) {
+                    if (p.flags.screen) ids += p.userId
+                }
+                // Remote frames may arrive before roster flags update.
+                for ((key, _) in rtcManager.remoteFrames.value) {
+                    if (key.kind == MediaKind.Screen) ids += key.publisher
+                }
             }
         }
+        if (state.hasScreen) ids += me
+        return ids.toList()
+    }
+
+    fun focusedStreamerId(): Long? {
+        val live = liveStreamerIds()
+        if (live.isEmpty()) return null
+        val focus = _uiState.value.focusedStreamerId
+        return if (focus != null && focus in live) focus else live.first()
+    }
+
+    fun cycleFocusedStreamer() {
+        val live = liveStreamerIds()
+        if (live.isEmpty()) {
+            _uiState.update { it.copy(focusedStreamerId = null) }
+            return
+        }
+        val current = focusedStreamerId()
+        val idx = live.indexOf(current)
+        val next = live[(idx + 1).floorMod(live.size)]
+        _uiState.update { it.copy(focusedStreamerId = next) }
+    }
+
+    private fun Int.floorMod(m: Int): Int = ((this % m) + m) % m
+
+    private fun syncRtcSession() {
+        val state = _uiState.value
+        val me = state.currentUserId
+        when {
+            state.inVoiceChannelId != null && state.callPhase == CallPhaseUi.Active -> {
+                // Guild SFU: everyone offers (desktop webrtc_offerer).
+                rtcManager.start(
+                    place = MediaPlace.VoiceChannel(state.inVoiceChannelId),
+                    me = me,
+                    offerer = true
+                )
+                syncRemoteSubscriptions()
+            }
+            state.activeDmCall != null && state.callPhase == CallPhaseUi.Active -> {
+                val call = state.activeDmCall
+                rtcManager.start(
+                    place = MediaPlace.DirectCall(call.dmId),
+                    me = me,
+                    offerer = call.caller == me
+                )
+                syncRemoteSubscriptions()
+            }
+            else -> {
+                // Keep PC only while seated in voice or active DM call.
+                if (state.inVoiceChannelId == null &&
+                    (state.activeDmCall == null || state.callPhase != CallPhaseUi.Active)
+                ) {
+                    rtcManager.stop()
+                }
+            }
+        }
+    }
+
+    private fun syncRemoteSubscriptions() {
+        val state = _uiState.value
+        val pairs = when {
+            state.inVoiceChannelId != null -> {
+                state.voiceByChannel[state.inVoiceChannelId].orEmpty()
+                    .map { it.userId to it.flags }
+            }
+            state.activeDmCall != null -> {
+                callParticipants().map { it.userId to it.flags }
+            }
+            else -> emptyList()
+        }
+        rtcManager.ensureSubsForMembers(pairs)
     }
 
     fun hangUp() {
@@ -508,7 +661,20 @@ class MainViewModel @Inject constructor(
 
     fun toggleCamera() {
         val current = _uiState.value
-        pushFlags(current.isMuted, current.isDeafened, !current.hasCamera, current.hasScreen)
+        if (current.hasCamera) {
+            pushFlags(current.isMuted, current.isDeafened, camera = false, current.hasScreen)
+        } else {
+            // Ask UI to ensure CAMERA permission, then enable.
+            _uiState.update { it.copy(pendingCameraPermission = true) }
+        }
+    }
+
+    fun onCameraPermissionResult(granted: Boolean) {
+        _uiState.update { it.copy(pendingCameraPermission = false) }
+        if (granted) {
+            val current = _uiState.value
+            pushFlags(current.isMuted, current.isDeafened, camera = true, current.hasScreen)
+        }
     }
 
     fun requestScreenShare() {

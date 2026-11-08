@@ -143,6 +143,10 @@ interface BanterApi {
     @POST("v1/voice/flags")
     suspend fun setVoiceFlags(@Body body: VoiceFlags): Response<Unit>
 
+    /** STUN/TURN (+ SFU advertise hint) for WebRTC PeerConnections. */
+    @GET("v1/ice")
+    suspend fun ice(): Response<IceConfig>
+
     // --- Profile ---
 
     @GET("v1/users/{id}")

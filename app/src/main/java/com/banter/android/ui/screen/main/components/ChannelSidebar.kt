@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.HorizontalDivider
@@ -50,6 +51,7 @@ fun ChannelSidebar(
     onToggleMute: () -> Unit,
     onToggleDeafen: () -> Unit,
     onLogout: () -> Unit,
+    onOpenSettings: () -> Unit,
     onAddFriendClick: () -> Unit,
     hideHeader: Boolean = false,
     userBarOnly: Boolean = false,
@@ -74,6 +76,7 @@ fun ChannelSidebar(
             UserBar(
                 displayName = uiState.currentDisplayName,
                 username = uiState.currentUsername,
+                onOpenSettings = onOpenSettings,
                 onLogout = onLogout
             )
         } else {
@@ -118,6 +121,7 @@ fun ChannelSidebar(
             UserBar(
                 displayName = uiState.currentDisplayName,
                 username = uiState.currentUsername,
+                onOpenSettings = onOpenSettings,
                 onLogout = onLogout
             )
         }
@@ -505,7 +509,12 @@ private fun VoiceBar(
 }
 
 @Composable
-private fun UserBar(displayName: String, username: String, onLogout: () -> Unit) {
+private fun UserBar(
+    displayName: String,
+    username: String,
+    onOpenSettings: () -> Unit,
+    onLogout: () -> Unit
+) {
     HorizontalDivider(color = BanterColors.Divider)
     Row(
         modifier = Modifier
@@ -518,7 +527,8 @@ private fun UserBar(displayName: String, username: String, onLogout: () -> Unit)
             modifier = Modifier
                 .size(36.dp)
                 .clip(CircleShape)
-                .background(BanterColors.Blurple),
+                .background(BanterColors.Blurple)
+                .clickable(onClick = onOpenSettings),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -529,7 +539,11 @@ private fun UserBar(displayName: String, username: String, onLogout: () -> Unit)
             )
         }
         Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onOpenSettings)
+        ) {
             Text(
                 displayName,
                 fontSize = 14.sp,
@@ -544,6 +558,14 @@ private fun UserBar(displayName: String, username: String, onLogout: () -> Unit)
                 color = BanterColors.TextMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+        IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Filled.Settings,
+                contentDescription = "Settings",
+                tint = BanterColors.TextSecondary,
+                modifier = Modifier.size(18.dp)
             )
         }
         IconButton(onClick = onLogout, modifier = Modifier.size(32.dp)) {

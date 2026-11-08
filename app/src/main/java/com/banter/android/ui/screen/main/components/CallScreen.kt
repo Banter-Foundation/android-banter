@@ -1,7 +1,10 @@
 package com.banter.android.ui.screen.main.components
 
+import android.graphics.Bitmap
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -18,14 +21,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.banter.android.data.model.MediaKind
 import com.banter.android.data.model.VoiceFlags
 import com.banter.android.data.model.VoiceMember
+import com.banter.android.media.BanterRtcManager
+import com.banter.android.media.CameraPreview
+import com.banter.android.media.ScreenShareManager
+import com.banter.android.media.ScreenSharePreview
 import com.banter.android.ui.theme.BanterColors
 
 enum class CallKind { VoiceChannel, DmCall }
@@ -44,6 +54,13 @@ fun CallScreen(
     members: List<CallParticipant>,
     selfFlags: VoiceFlags,
     isScreenSharing: Boolean,
+    screenShareManager: ScreenShareManager,
+    remoteFrames: Map<BanterRtcManager.RemoteStreamKey, Bitmap>,
+    focusedStreamerId: Long?,
+    liveStreamerIds: List<Long>,
+    cameraFrontFacing: Boolean,
+    mirrorCamera: Boolean,
+    onCycleStreamer: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleDeafen: () -> Unit,
     onToggleCamera: () -> Unit,
@@ -109,7 +126,7 @@ fun CallScreen(
                 Spacer(Modifier.size(48.dp))
             }
 
-            // Stage
+            // Stage — featured remote Go Live / camera, or local preview
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -117,11 +134,31 @@ fun CallScreen(
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
+                val showingScreen = isScreenSharing || selfFlags.screen
+                val showingCamera = selfFlags.camera
+                val hasRemoteStream = remoteFrames.keys.any {
+                    it.kind == MediaKind.Screen || it.kind == MediaKind.Camera
+                }
                 when {
                     phase == CallPhaseUi.Ringing && members.size <= 1 -> {
                         RingingAvatar(
                             name = members.firstOrNull()?.displayName ?: title,
                             userId = members.firstOrNull()?.userId ?: 0L
+                        )
+                    }
+                    hasRemoteStream || liveStreamerIds.isNotEmpty() || showingScreen || showingCamera -> {
+                        StreamStage(
+                            showingScreen = showingScreen,
+                            showingCamera = showingCamera,
+                            screenShareManager = screenShareManager,
+                            remoteFrames = remoteFrames,
+                            focusedStreamerId = focusedStreamerId,
+                            liveStreamerIds = liveStreamerIds,
+                            cameraFrontFacing = cameraFrontFacing,
+                            mirrorCamera = mirrorCamera,
+                            members = members,
+                            phase = phase,
+                            onCycleStreamer = onCycleStreamer
                         )
                     }
                     members.isEmpty() -> {
@@ -186,6 +223,237 @@ data class CallParticipant(
     val flags: VoiceFlags = VoiceFlags(),
     val isSelf: Boolean = false
 )
+
+@Composable
+private fun StreamStage(
+    showingScreen: Boolean,
+    showingCamera: Boolean,
+    screenShareManager: ScreenShareManager,
+    remoteFrames: Map<BanterRtcManager.RemoteStreamKey, Bitmap>,
+    focusedStreamerId: Long?,
+    liveStreamerIds: List<Long>,
+    cameraFrontFacing: Boolean,
+    mirrorCamera: Boolean,
+    members: List<CallParticipant>,
+    phase: CallPhaseUi,
+    onCycleStreamer: () -> Unit
+) {
+    val selfId = members.firstOrNull { it.isSelf }?.userId
+    val focus = focusedStreamerId
+        ?: liveStreamerIds.firstOrNull()
+        ?: remoteFrames.keys.firstOrNull { it.kind == MediaKind.Screen }?.publisher
+        ?: remoteFrames.keys.firstOrNull { it.kind == MediaKind.Camera }?.publisher
+
+    val remoteScreen = focus?.let { remoteFrames[BanterRtcManager.RemoteStreamKey(it, MediaKind.Screen)] }
+    val remoteCamera = focus?.let { remoteFrames[BanterRtcManager.RemoteStreamKey(it, MediaKind.Camera)] }
+    val focusIsSelf = focus != null && focus == selfId
+    val focusName = members.find { it.userId == focus }?.displayName
+        ?: if (focus != null) "User $focus" else null
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            // Featured remote (or self) Go Live
+            remoteScreen != null && !remoteScreen.isRecycled -> {
+                RemoteStreamFrame(
+                    bitmap = remoteScreen,
+                    label = "${focusName ?: "Stream"} · LIVE",
+                    badgeColor = BanterColors.Fuchsia,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            focusIsSelf && showingScreen -> {
+                ScreenSharePreview(
+                    screenShareManager = screenShareManager,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            // Remote camera as main stage when no screen
+            remoteCamera != null && !remoteCamera.isRecycled -> {
+                RemoteStreamFrame(
+                    bitmap = remoteCamera,
+                    label = "${focusName ?: "Camera"}",
+                    badgeColor = BanterColors.Blurple,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            showingScreen -> {
+                ScreenSharePreview(
+                    screenShareManager = screenShareManager,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            showingCamera -> {
+                CameraPreview(
+                    frontFacing = cameraFrontFacing,
+                    mirrored = mirrorCamera,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(16.dp))
+                )
+                Text(
+                    "Camera",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(12.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(BanterColors.Blurple)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+            liveStreamerIds.isNotEmpty() -> {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.align(Alignment.Center)
+                ) {
+                    CircularProgressIndicator(color = BanterColors.Fuchsia)
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Loading ${focusName ?: "stream"}…",
+                        color = BanterColors.TextSecondary,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+
+        // Local camera PiP while watching a stream
+        if (showingCamera && (remoteScreen != null || showingScreen || remoteCamera != null)) {
+            CameraPreview(
+                frontFacing = cameraFrontFacing,
+                mirrored = mirrorCamera,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+                    .width(112.dp)
+                    .height(160.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            )
+        }
+
+        // Watch chrome: cycle when multiple live streamers
+        if (liveStreamerIds.size > 1) {
+            IconButton(
+                onClick = onCycleStreamer,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+            ) {
+                Icon(
+                    Icons.Filled.SkipNext,
+                    contentDescription = "Next stream",
+                    tint = Color.White
+                )
+            }
+        }
+
+        // Streamer avatars for quick focus
+        if (liveStreamerIds.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                liveStreamerIds.take(5).forEach { id ->
+                    val p = members.find { it.userId == id }
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (id == focus) BanterColors.Fuchsia else avatarColor(id)
+                            )
+                            .clickable(onClick = onCycleStreamer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            (p?.displayName ?: "?").take(1).uppercase(),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
+        } else {
+            val others = members.filterNot { it.isSelf }
+            if (others.isNotEmpty() && phase == CallPhaseUi.Active) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    others.take(3).forEach { p ->
+                        // Prefer remote camera tile if present
+                        val cam = remoteFrames[BanterRtcManager.RemoteStreamKey(p.userId, MediaKind.Camera)]
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(avatarColor(p.userId)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (cam != null && !cam.isRecycled) {
+                                Image(
+                                    bitmap = cam.asImageBitmap(),
+                                    contentDescription = p.displayName,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Text(
+                                    p.displayName.take(1).uppercase().ifEmpty { "?" },
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoteStreamFrame(
+    bitmap: Bitmap,
+    label: String,
+    badgeColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.Black)
+    ) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = label,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize()
+        )
+        Text(
+            label.uppercase(),
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(10.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(badgeColor)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
 
 fun VoiceMember.toParticipant(name: String? = null, isSelf: Boolean = false) =
     CallParticipant(
