@@ -124,13 +124,8 @@ class WebSocketManager @Inject constructor(
                     ).toList()
                 )
                 "call" -> {
-                    val call = obj.getAsJsonObject("call") ?: return
-                    ServerEvent.Call(
-                        dmId = call.get("dm_id").asLong,
-                        phase = call.get("phase")?.asString ?: "",
-                        caller = call.get("caller").asLong,
-                        callee = call.get("callee").asLong
-                    )
+                    val callObj = obj.get("call") ?: return
+                    ServerEvent.Call(call = gson.fromJson(callObj, CallSnapshot::class.java))
                 }
                 "call_ended" -> ServerEvent.CallEnded(dmId = obj.get("dm_id").asLong)
                 "friend_request" -> ServerEvent.FriendRequestEvent(

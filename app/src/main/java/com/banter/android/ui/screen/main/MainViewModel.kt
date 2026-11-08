@@ -6,6 +6,10 @@ import com.banter.android.data.api.WebSocketManager
 import com.banter.android.data.local.SessionStore
 import com.banter.android.data.model.*
 import com.banter.android.data.repository.*
+import com.banter.android.media.ScreenShareManager
+import com.banter.android.ui.screen.main.components.CallKind
+import com.banter.android.ui.screen.main.components.CallParticipant
+import com.banter.android.ui.screen.main.components.CallPhaseUi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -22,11 +26,9 @@ data class MainUiState(
     val selectedChannelName: String = "",
     val selectedDmId: Long? = null,
     val selectedDmPeerName: String = "",
-    /** Nested category → channels from /v1/servers/{id}/layout */
     val layout: List<CategoryLayout> = emptyList(),
     val members: List<Member> = emptyList(),
     val roles: List<GuildRole> = emptyList(),
-    /** channelId → voice members currently in that channel */
     val voiceByChannel: Map<Long, List<VoiceMember>> = emptyMap(),
     val dms: List<DirectChat> = emptyList(),
     val friends: List<Friend> = emptyList(),
@@ -35,14 +37,21 @@ data class MainUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val inVoiceChannelId: Long? = null,
+    val inVoiceChannelName: String = "",
     val isMuted: Boolean = false,
     val isDeafened: Boolean = false,
     val hasCamera: Boolean = false,
     val hasScreen: Boolean = false,
     val activeTab: MainTab = MainTab.HOME,
-    /** Discord-mobile: true when chat/members fills the screen. */
     val inConversation: Boolean = false,
-    val showMembers: Boolean = false
+    val showMembers: Boolean = false,
+    /** Full-screen phone-call UI for VC or DM. */
+    val callOpen: Boolean = false,
+    val callMinimized: Boolean = false,
+    val callKind: CallKind = CallKind.VoiceChannel,
+    val callPhase: CallPhaseUi = CallPhaseUi.Connecting,
+    val activeDmCall: CallSnapshot? = null,
+    val pendingScreenSharePermission: Boolean = false
 )
 
 enum class MainTab { HOME, SERVERS }
@@ -55,7 +64,8 @@ class MainViewModel @Inject constructor(
     private val friendRepository: FriendRepository,
     private val voiceRepository: VoiceRepository,
     private val authRepository: AuthRepository,
-    val webSocketManager: WebSocketManager
+    val webSocketManager: WebSocketManager,
+    val screenShareManager: ScreenShareManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -81,6 +91,13 @@ class MainViewModel @Inject constructor(
                 webSocketManager.connect(serverUrl, token)
             }
             observeWebSocketEvents()
+            viewModelScope.launch {
+                screenShareManager.isSharing.collect { sharing ->
+                    if (_uiState.value.hasScreen != sharing) {
+                        setScreenFlag(sharing)
+                    }
+                }
+            }
             loadServers()
             loadDms()
             loadFriends()
@@ -103,15 +120,66 @@ class MainViewModel @Inject constructor(
                         _uiState.update { state ->
                             val map = state.voiceByChannel.toMutableMap()
                             map[event.channelId] = event.members
-                            val selfIn = event.members.any { it.userId == state.currentUserId }
+                            val self = event.members.find { it.userId == state.currentUserId }
                             state.copy(
                                 voiceByChannel = map,
                                 inVoiceChannelId = when {
-                                    selfIn -> event.channelId
+                                    self != null -> event.channelId
                                     state.inVoiceChannelId == event.channelId -> null
                                     else -> state.inVoiceChannelId
-                                }
+                                },
+                                callOpen = when {
+                                    self != null -> true
+                                    state.inVoiceChannelId == event.channelId && self == null -> false
+                                    else -> state.callOpen
+                                },
+                                callPhase = if (self != null) CallPhaseUi.Active else state.callPhase,
+                                isMuted = self?.flags?.muted ?: state.isMuted,
+                                isDeafened = self?.flags?.deafened ?: state.isDeafened,
+                                hasCamera = self?.flags?.camera ?: state.hasCamera,
+                                hasScreen = self?.flags?.screen ?: state.hasScreen
                             )
+                        }
+                    }
+                    is ServerEvent.Call -> {
+                        val call = event.call
+                        val selfId = _uiState.value.currentUserId
+                        val isCallee = call.callee == selfId
+                        val isCaller = call.caller == selfId
+                        if (!isCallee && !isCaller) return@collect
+                        val peerName = _uiState.value.dms.find { it.id == call.dmId }?.peerDisplayName
+                            ?: "Direct Call"
+                        val phase = when (call.phase.lowercase()) {
+                            "active" -> CallPhaseUi.Active
+                            else -> CallPhaseUi.Ringing
+                        }
+                        _uiState.update {
+                            it.copy(
+                                activeDmCall = call,
+                                callOpen = true,
+                                callMinimized = false,
+                                callKind = CallKind.DmCall,
+                                callPhase = phase,
+                                selectedDmId = call.dmId,
+                                selectedDmPeerName = peerName,
+                                isMuted = if (isCaller) call.callerFlags.muted else call.calleeFlags.muted,
+                                hasCamera = if (isCaller) call.callerFlags.camera else call.calleeFlags.camera,
+                                hasScreen = if (isCaller) call.callerFlags.screen else call.calleeFlags.screen
+                            )
+                        }
+                    }
+                    is ServerEvent.CallEnded -> {
+                        if (_uiState.value.activeDmCall?.dmId == event.dmId) {
+                            screenShareManager.stop()
+                            _uiState.update {
+                                it.copy(
+                                    activeDmCall = null,
+                                    callOpen = it.inVoiceChannelId != null,
+                                    callKind = if (it.inVoiceChannelId != null) CallKind.VoiceChannel else it.callKind,
+                                    callPhase = CallPhaseUi.Active,
+                                    hasScreen = false
+                                )
+                            }
                         }
                     }
                     is ServerEvent.FriendRequestEvent -> {
@@ -123,6 +191,35 @@ class MainViewModel @Inject constructor(
                     is ServerEvent.FriendsChanged -> loadFriends()
                     else -> {}
                 }
+            }
+        }
+    }
+
+    fun callParticipants(): List<CallParticipant> {
+        val state = _uiState.value
+        return when (state.callKind) {
+            CallKind.VoiceChannel -> {
+                val channelId = state.inVoiceChannelId ?: return emptyList()
+                val voice = state.voiceByChannel[channelId].orEmpty()
+                voice.map { vm ->
+                    val member = state.members.find { it.userId == vm.userId }
+                    val name = member?.nickname ?: member?.displayName
+                        ?: if (vm.userId == state.currentUserId) state.currentDisplayName
+                        else "User ${vm.userId}"
+                    CallParticipant(vm.userId, name, vm.flags, vm.userId == state.currentUserId)
+                }
+            }
+            CallKind.DmCall -> {
+                val call = state.activeDmCall ?: return emptyList()
+                val peer = state.dms.find { it.id == call.dmId }
+                val peerName = peer?.peerDisplayName ?: state.selectedDmPeerName
+                val peerId = peer?.peerId ?: if (call.caller == state.currentUserId) call.callee else call.caller
+                val selfFlags = if (call.caller == state.currentUserId) call.callerFlags else call.calleeFlags
+                val peerFlags = if (call.caller == state.currentUserId) call.calleeFlags else call.callerFlags
+                listOf(
+                    CallParticipant(state.currentUserId, state.currentDisplayName, selfFlags, isSelf = true),
+                    CallParticipant(peerId, peerName, peerFlags, isSelf = false)
+                )
             }
         }
     }
@@ -283,44 +380,172 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun joinVoice(channelId: Long) {
+    fun joinVoice(channelId: Long, channelName: String = "") {
+        val name = channelName.ifBlank {
+            _uiState.value.layout.flatMap { it.channels }.find { it.id == channelId }?.name
+                ?: "Voice"
+        }
         viewModelScope.launch {
             voiceRepository.join(channelId).onSuccess {
-                _uiState.update { it.copy(inVoiceChannelId = channelId) }
+                _uiState.update {
+                    it.copy(
+                        inVoiceChannelId = channelId,
+                        inVoiceChannelName = name,
+                        callOpen = true,
+                        callMinimized = false,
+                        callKind = CallKind.VoiceChannel,
+                        callPhase = CallPhaseUi.Active,
+                        activeDmCall = null
+                    )
+                }
             }
         }
     }
 
     fun leaveVoice() {
         viewModelScope.launch {
+            screenShareManager.stop()
             voiceRepository.leave().onSuccess {
-                _uiState.update { it.copy(inVoiceChannelId = null) }
+                _uiState.update {
+                    it.copy(
+                        inVoiceChannelId = null,
+                        inVoiceChannelName = "",
+                        callOpen = it.activeDmCall != null,
+                        hasScreen = false,
+                        hasCamera = false
+                    )
+                }
             }
         }
+    }
+
+    fun startDmCall(dmId: Long) {
+        viewModelScope.launch {
+            dmRepository.startCall(dmId).onSuccess {
+                val peer = _uiState.value.dms.find { it.id == dmId }?.peerDisplayName ?: "Call"
+                _uiState.update {
+                    it.copy(
+                        callOpen = true,
+                        callMinimized = false,
+                        callKind = CallKind.DmCall,
+                        callPhase = CallPhaseUi.Ringing,
+                        selectedDmId = dmId,
+                        selectedDmPeerName = peer,
+                        activeDmCall = CallSnapshot(
+                            dmId = dmId,
+                            phase = "ringing",
+                            caller = it.currentUserId,
+                            callee = it.dms.find { d -> d.id == dmId }?.peerId ?: 0L
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun acceptDmCall() {
+        val dmId = _uiState.value.activeDmCall?.dmId ?: return
+        viewModelScope.launch {
+            dmRepository.acceptCall(dmId).onSuccess {
+                _uiState.update { it.copy(callPhase = CallPhaseUi.Active) }
+            }
+        }
+    }
+
+    fun declineDmCall() {
+        val dmId = _uiState.value.activeDmCall?.dmId ?: return
+        viewModelScope.launch {
+            dmRepository.declineCall(dmId)
+            screenShareManager.stop()
+            _uiState.update {
+                it.copy(activeDmCall = null, callOpen = it.inVoiceChannelId != null, hasScreen = false)
+            }
+        }
+    }
+
+    fun endDmCall() {
+        val dmId = _uiState.value.activeDmCall?.dmId ?: return
+        viewModelScope.launch {
+            dmRepository.endCall(dmId)
+            screenShareManager.stop()
+            _uiState.update {
+                it.copy(activeDmCall = null, callOpen = it.inVoiceChannelId != null, hasScreen = false)
+            }
+        }
+    }
+
+    fun hangUp() {
+        when (_uiState.value.callKind) {
+            CallKind.VoiceChannel -> leaveVoice()
+            CallKind.DmCall -> endDmCall()
+        }
+    }
+
+    fun minimizeCall() {
+        _uiState.update { it.copy(callMinimized = true) }
+    }
+
+    fun expandCall() {
+        _uiState.update { it.copy(callMinimized = false, callOpen = true) }
     }
 
     fun toggleMute() {
         val current = _uiState.value
         val newMuted = !current.isMuted
-        viewModelScope.launch {
-            voiceRepository.setFlags(newMuted, current.isDeafened, current.hasCamera, current.hasScreen)
-                .onSuccess { _uiState.update { it.copy(isMuted = newMuted) } }
-        }
+        pushFlags(newMuted, current.isDeafened, current.hasCamera, current.hasScreen)
     }
 
     fun toggleDeafen() {
         val current = _uiState.value
         val newDeafened = !current.isDeafened
+        pushFlags(
+            muted = current.isMuted || newDeafened,
+            deafened = newDeafened,
+            camera = current.hasCamera,
+            screen = current.hasScreen
+        )
+    }
+
+    fun toggleCamera() {
+        val current = _uiState.value
+        pushFlags(current.isMuted, current.isDeafened, !current.hasCamera, current.hasScreen)
+    }
+
+    fun requestScreenShare() {
+        if (_uiState.value.hasScreen || screenShareManager.isSharing.value) {
+            screenShareManager.stop()
+            pushFlags(
+                _uiState.value.isMuted,
+                _uiState.value.isDeafened,
+                _uiState.value.hasCamera,
+                screen = false
+            )
+        } else {
+            _uiState.update { it.copy(pendingScreenSharePermission = true) }
+        }
+    }
+
+    fun onScreenSharePermissionHandled() {
+        _uiState.update { it.copy(pendingScreenSharePermission = false) }
+    }
+
+    private fun setScreenFlag(sharing: Boolean) {
+        val current = _uiState.value
+        pushFlags(current.isMuted, current.isDeafened, current.hasCamera, sharing)
+    }
+
+    private fun pushFlags(muted: Boolean, deafened: Boolean, camera: Boolean, screen: Boolean) {
         viewModelScope.launch {
-            voiceRepository.setFlags(current.isMuted || newDeafened, newDeafened, current.hasCamera, current.hasScreen)
-                .onSuccess {
-                    _uiState.update {
-                        it.copy(
-                            isDeafened = newDeafened,
-                            isMuted = if (newDeafened) true else it.isMuted
-                        )
-                    }
+            voiceRepository.setFlags(muted, deafened, camera, screen).onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isMuted = muted,
+                        isDeafened = deafened,
+                        hasCamera = camera,
+                        hasScreen = screen
+                    )
                 }
+            }
         }
     }
 

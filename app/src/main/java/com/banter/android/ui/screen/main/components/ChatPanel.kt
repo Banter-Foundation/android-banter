@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Tag
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.banter.android.bfmd.BfmdText
 import com.banter.android.data.api.WebSocketManager
 import com.banter.android.data.model.Attachment
 import com.banter.android.data.model.Message
@@ -45,6 +47,7 @@ fun ChatPanel(
     onBack: () -> Unit,
     onMemberListToggle: () -> Unit,
     showMemberButton: Boolean,
+    onStartCall: (() -> Unit)? = null,
     webSocketManager: WebSocketManager,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
@@ -104,7 +107,8 @@ fun ChatPanel(
             isDm = isDm,
             onBack = onBack,
             showMemberButton = showMemberButton,
-            onMemberListToggle = onMemberListToggle
+            onMemberListToggle = onMemberListToggle,
+            onStartCall = onStartCall
         )
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -178,7 +182,8 @@ private fun ChatTopBar(
     isDm: Boolean,
     onBack: () -> Unit,
     showMemberButton: Boolean,
-    onMemberListToggle: () -> Unit
+    onMemberListToggle: () -> Unit,
+    onStartCall: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -213,6 +218,15 @@ private fun ChatTopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
+        if (onStartCall != null) {
+            IconButton(onClick = onStartCall) {
+                Icon(
+                    Icons.Filled.Call,
+                    contentDescription = "Start Call",
+                    tint = BanterColors.TextSecondary
+                )
+            }
+        }
         if (showMemberButton) {
             IconButton(onClick = onMemberListToggle) {
                 Icon(
@@ -279,10 +293,10 @@ fun MessageRow(message: Message, prevMessage: Message?) {
                 }
             }
 
-            Text(
-                text = message.body,
-                fontSize = 15.sp,
-                color = BanterColors.TextPrimary,
+            BfmdText(
+                source = message.body,
+                defaultColor = BanterColors.TextPrimary,
+                defaultSize = 15.sp,
                 lineHeight = 22.sp
             )
 

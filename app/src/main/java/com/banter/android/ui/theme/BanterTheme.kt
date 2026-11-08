@@ -21,8 +21,10 @@ object BanterColors {
     val Blurple = Color(0xFF5865F2)
     val BlurpleDark = Color(0xFF4752C4)
     val Green = Color(0xFF23A55A)
+    val GreenDark = Color(0xFF1A7F44)
     val Red = Color(0xFFF23F43)
     val Yellow = Color(0xFFF0B232)
+    val Fuchsia = Color(0xFFEB459E)
 
     val TextPrimary = Color(0xFFDBDEE1)
     val TextSecondary = Color(0xFF949BA4)

@@ -45,7 +45,7 @@ fun ChannelSidebar(
     uiState: MainUiState,
     onChannelClick: (Long, String) -> Unit,
     onDmClick: (Long, String) -> Unit,
-    onVoiceJoin: (Long) -> Unit,
+    onVoiceJoin: (Long, String) -> Unit,
     onVoiceLeave: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleDeafen: () -> Unit,
@@ -168,7 +168,7 @@ private fun ServerChannelList(
     voiceByChannel: Map<Long, List<VoiceMember>>,
     inVoiceChannelId: Long?,
     onChannelClick: (Long, String) -> Unit,
-    onVoiceJoin: (Long) -> Unit,
+    onVoiceJoin: (Long, String) -> Unit,
     onVoiceLeave: () -> Unit
 ) {
     val sorted = layout.sortedBy { it.category.position }
@@ -200,7 +200,7 @@ private fun ServerChannelList(
                         inVoice = inVoiceChannelId == channel.id,
                         onClick = {
                             if (inVoiceChannelId == channel.id) onVoiceLeave()
-                            else onVoiceJoin(channel.id)
+                            else onVoiceJoin(channel.id, channel.name)
                         }
                     )
                     else -> ChannelRow(

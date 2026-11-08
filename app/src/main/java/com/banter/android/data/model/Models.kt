@@ -197,6 +197,15 @@ data class VoiceRoster(
     val members: List<VoiceMember> = emptyList()
 )
 
+data class CallSnapshot(
+    @SerializedName("dm_id") val dmId: Long,
+    val phase: String, // "ringing" | "active"
+    val caller: Long,
+    val callee: Long,
+    @SerializedName("caller_flags") val callerFlags: VoiceFlags = VoiceFlags(),
+    @SerializedName("callee_flags") val calleeFlags: VoiceFlags = VoiceFlags()
+)
+
 data class PresenceEntry(
     @SerializedName("user_id") val userId: Long,
     val state: String, // "online", "idle", "offline"

@@ -16,12 +16,7 @@ sealed class ServerEvent {
         val customStatus: String?
     ) : ServerEvent()
     data class Voice(val channelId: Long, val members: List<VoiceMember>) : ServerEvent()
-    data class Call(
-        val dmId: Long,
-        val phase: String,
-        val caller: Long,
-        val callee: Long
-    ) : ServerEvent()
+    data class Call(val call: CallSnapshot) : ServerEvent()
     data class CallEnded(val dmId: Long) : ServerEvent()
     data class FriendRequestEvent(val request: FriendRequest) : ServerEvent()
     object FriendsChanged : ServerEvent()
