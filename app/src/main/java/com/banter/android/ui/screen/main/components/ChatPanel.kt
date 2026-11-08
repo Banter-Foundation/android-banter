@@ -7,25 +7,27 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Tag
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.banter.android.data.api.WebSocketManager
+import com.banter.android.data.model.Attachment
 import com.banter.android.data.model.Message
 import com.banter.android.data.model.ServerEvent
 import com.banter.android.ui.screen.main.chat.ChatViewModel
@@ -37,26 +39,46 @@ import java.util.*
 @Composable
 fun ChatPanel(
     channelId: Long,
-    serverId: Long?,
+    channelName: String,
     currentUserId: Long,
+    isDm: Boolean,
+    onBack: () -> Unit,
     onMemberListToggle: () -> Unit,
+    showMemberButton: Boolean,
     webSocketManager: WebSocketManager,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
-    LaunchedEffect(channelId) {
-        viewModel.loadChannel(channelId, isDm = false)
+    LaunchedEffect(channelId, isDm) {
+        viewModel.loadChannel(channelId, isDm = isDm, name = channelName)
     }
 
-    LaunchedEffect(webSocketManager) {
+    LaunchedEffect(channelId, isDm, webSocketManager) {
         webSocketManager.events.collect { event ->
             when (event) {
-                is ServerEvent.NewMessage -> {
-                    if (event.message.channelId == channelId) {
-                        viewModel.onNewMessage(event.message)
+                is ServerEvent.MessageCreated -> {
+                    val matches = if (isDm) {
+                        event.target.type == "direct" && event.target.id == channelId
+                    } else {
+                        event.target.type == "channel" && event.target.id == channelId
                     }
+                    if (matches) viewModel.onNewMessage(event.message)
                 }
-                is ServerEvent.MessageEdited -> viewModel.onMessageEdited(event.id, event.content)
-                is ServerEvent.MessageDeleted -> viewModel.onMessageDeleted(event.id)
+                is ServerEvent.MessageEdited -> {
+                    val matches = if (isDm) {
+                        event.target.type == "direct" && event.target.id == channelId
+                    } else {
+                        event.target.type == "channel" && event.target.id == channelId
+                    }
+                    if (matches) viewModel.onMessageEdited(event.message)
+                }
+                is ServerEvent.MessageDeleted -> {
+                    val matches = if (isDm) {
+                        event.target.type == "direct" && event.target.id == channelId
+                    } else {
+                        event.target.type == "channel" && event.target.id == channelId
+                    }
+                    if (matches) viewModel.onMessageDeleted(event.messageId)
+                }
                 else -> {}
             }
         }
@@ -72,162 +94,153 @@ fun ChatPanel(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Top bar
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BanterColors.Background)
+    ) {
         ChatTopBar(
-            title = "#${uiState.channelName}",
+            title = if (isDm) channelName else "#$channelName",
+            isDm = isDm,
+            onBack = onBack,
+            showMemberButton = showMemberButton,
             onMemberListToggle = onMemberListToggle
         )
 
-        // Messages
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .background(BanterColors.Background),
-            contentPadding = PaddingValues(bottom = 8.dp)
-        ) {
-            if (uiState.isLoading) {
-                item {
-                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = BanterColors.Blurple)
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                uiState.isLoading && uiState.messages.isEmpty() -> {
+                    CircularProgressIndicator(
+                        color = BanterColors.Blurple,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+                uiState.error != null && uiState.messages.isEmpty() -> {
+                    Text(
+                        text = uiState.error ?: "Error",
+                        color = BanterColors.TextDanger,
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp)
+                    )
+                }
+                uiState.messages.isEmpty() -> {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            if (isDm) "This is the beginning of your direct message history with $channelName."
+                            else "Welcome to #$channelName!",
+                            color = BanterColors.TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Send a message to get the conversation started.",
+                            color = BanterColors.TextSecondary,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 12.dp, top = 4.dp)
+                    ) {
+                        items(uiState.messages, key = { it.id }) { message ->
+                            val index = uiState.messages.indexOf(message)
+                            MessageRow(
+                                message = message,
+                                prevMessage = uiState.messages.getOrNull(index - 1)
+                            )
+                        }
                     }
                 }
             }
-            items(uiState.messages, key = { it.id }) { message ->
-                MessageRow(
-                    message = message,
-                    isMine = message.authorId == currentUserId,
-                    prevMessage = uiState.messages.getOrNull(uiState.messages.indexOf(message) - 1)
-                )
-            }
         }
 
-        // Input
         ChatInput(
-            placeholder = "#${uiState.channelName}",
+            placeholder = if (isDm) "@$channelName" else "#$channelName",
             onSend = { viewModel.sendMessage(it) }
         )
     }
 }
 
 @Composable
-fun DmChatPanel(
-    dmId: Long,
-    currentUserId: Long,
-    webSocketManager: WebSocketManager,
-    viewModel: ChatViewModel = hiltViewModel()
+private fun ChatTopBar(
+    title: String,
+    isDm: Boolean,
+    onBack: () -> Unit,
+    showMemberButton: Boolean,
+    onMemberListToggle: () -> Unit
 ) {
-    LaunchedEffect(dmId) {
-        viewModel.loadChannel(dmId, isDm = true)
-    }
-
-    LaunchedEffect(webSocketManager) {
-        webSocketManager.events.collect { event ->
-            when (event) {
-                is ServerEvent.NewMessage -> {
-                    if (event.message.dmId == dmId) {
-                        viewModel.onNewMessage(event.message)
-                    }
-                }
-                is ServerEvent.MessageEdited -> viewModel.onMessageEdited(event.id, event.content)
-                is ServerEvent.MessageDeleted -> viewModel.onMessageDeleted(event.id)
-                else -> {}
-            }
-        }
-    }
-
-    val uiState by viewModel.uiState.collectAsState()
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty()) {
-            scope.launch { listState.animateScrollToItem(uiState.messages.size - 1) }
-        }
-    }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        ChatTopBar(title = uiState.channelName, onMemberListToggle = {})
-
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth().background(BanterColors.Background),
-            contentPadding = PaddingValues(bottom = 8.dp)
-        ) {
-            if (uiState.isLoading) {
-                item {
-                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = BanterColors.Blurple)
-                    }
-                }
-            }
-            items(uiState.messages, key = { it.id }) { message ->
-                MessageRow(
-                    message = message,
-                    isMine = message.authorId == currentUserId,
-                    prevMessage = uiState.messages.getOrNull(uiState.messages.indexOf(message) - 1)
-                )
-            }
-        }
-
-        ChatInput(
-            placeholder = uiState.channelName,
-            onSend = { viewModel.sendMessage(it) }
-        )
-    }
-}
-
-@Composable
-private fun ChatTopBar(title: String, onMemberListToggle: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(56.dp)
             .background(BanterColors.Background)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Filled.Tag, contentDescription = null,
-            tint = BanterColors.TextSecondary, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(6.dp))
+        IconButton(onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = BanterColors.TextPrimary
+            )
+        }
+        if (!isDm) {
+            Icon(
+                Icons.Filled.Tag,
+                contentDescription = null,
+                tint = BanterColors.TextSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(4.dp))
+        }
         Text(
             text = title,
             fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
+            fontSize = 16.sp,
             color = BanterColors.TextPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        IconButton(onClick = onMemberListToggle) {
-            Icon(Icons.Filled.People, contentDescription = "Member List",
-                tint = BanterColors.TextSecondary)
+        if (showMemberButton) {
+            IconButton(onClick = onMemberListToggle) {
+                Icon(
+                    Icons.Filled.People,
+                    contentDescription = "Members",
+                    tint = BanterColors.TextSecondary
+                )
+            }
         }
     }
     HorizontalDivider(color = BanterColors.Divider)
 }
 
 @Composable
-fun MessageRow(message: Message, isMine: Boolean, prevMessage: Message?) {
+fun MessageRow(message: Message, prevMessage: Message?) {
     val showHeader = prevMessage == null
             || prevMessage.authorId != message.authorId
-            || (message.sentAt - prevMessage.sentAt) > 5 * 60 * 1000
+            || (message.createdAt - prevMessage.createdAt) > 5 * 60 * 1000
 
-    if (showHeader) {
-        Spacer(Modifier.height(16.dp))
-    }
+    if (showHeader) Spacer(Modifier.height(12.dp))
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.Transparent)
-            .padding(horizontal = 16.dp, vertical = if (showHeader) 0.dp else 1.dp),
+            .padding(horizontal = 12.dp, vertical = if (showHeader) 2.dp else 0.dp),
         verticalAlignment = Alignment.Top
     ) {
         if (showHeader) {
-            // Avatar
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -236,7 +249,7 @@ fun MessageRow(message: Message, isMine: Boolean, prevMessage: Message?) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    message.author.displayName.take(1).uppercase(),
+                    message.displayAuthor.take(1).uppercase().ifEmpty { "?" },
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
@@ -248,58 +261,35 @@ fun MessageRow(message: Message, isMine: Boolean, prevMessage: Message?) {
 
         Spacer(Modifier.width(12.dp))
 
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             if (showHeader) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        text = message.author.displayName,
+                        text = message.displayAuthor,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
                         color = BanterColors.TextPrimary
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = formatTimestamp(message.sentAt),
+                        text = formatTimestamp(message.createdAt),
                         fontSize = 11.sp,
                         color = BanterColors.TextMuted
                     )
                 }
             }
 
-            // Reply
-            message.replyTo?.let { reply ->
-                Row(
-                    modifier = Modifier
-                        .padding(bottom = 2.dp)
-                        .background(BanterColors.MessageHover, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Filled.Reply, contentDescription = null,
-                        tint = BanterColors.TextMuted, modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(reply.author.displayName, fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold, color = BanterColors.TextSecondary)
-                    Spacer(Modifier.width(4.dp))
-                    Text(reply.content.take(50), fontSize = 12.sp, color = BanterColors.TextMuted,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-
-            // Message content
             Text(
-                text = message.content,
+                text = message.body,
                 fontSize = 15.sp,
                 color = BanterColors.TextPrimary,
                 lineHeight = 22.sp
             )
 
-            // Edited indicator
             if (message.editedAt != null) {
                 Text("(edited)", fontSize = 10.sp, color = BanterColors.TextMuted)
             }
 
-            // Attachments
             message.attachments.forEach { attachment ->
                 AttachmentChip(attachment)
             }
@@ -308,7 +298,7 @@ fun MessageRow(message: Message, isMine: Boolean, prevMessage: Message?) {
 }
 
 @Composable
-private fun AttachmentChip(attachment: com.banter.android.data.model.Attachment) {
+private fun AttachmentChip(attachment: Attachment) {
     Row(
         modifier = Modifier
             .padding(top = 4.dp)
@@ -316,12 +306,20 @@ private fun AttachmentChip(attachment: com.banter.android.data.model.Attachment)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Filled.AttachFile, contentDescription = null,
-            tint = BanterColors.Blurple, modifier = Modifier.size(16.dp))
+        Icon(
+            Icons.Filled.AttachFile,
+            contentDescription = null,
+            tint = BanterColors.Blurple,
+            modifier = Modifier.size(16.dp)
+        )
         Spacer(Modifier.width(6.dp))
         Column {
-            Text(attachment.filename, fontSize = 13.sp, color = BanterColors.TextLink,
-                fontWeight = FontWeight.Medium)
+            Text(
+                attachment.filename,
+                fontSize = 13.sp,
+                color = BanterColors.TextLink,
+                fontWeight = FontWeight.Medium
+            )
             Text(formatFileSize(attachment.byteSize), fontSize = 11.sp, color = BanterColors.TextMuted)
         }
     }
@@ -335,28 +333,30 @@ fun ChatInput(placeholder: String, onSend: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .background(BanterColors.Background)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         Box(
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(10.dp))
+                .heightIn(min = 44.dp)
+                .clip(RoundedCornerShape(22.dp))
                 .background(BanterColors.InputBackground)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             if (text.isEmpty()) {
-                Text("Message $placeholder", color = BanterColors.TextMuted, fontSize = 14.sp)
+                Text("Message $placeholder", color = BanterColors.TextMuted, fontSize = 15.sp)
             }
             BasicTextField(
                 value = text,
                 onValueChange = { text = it },
                 textStyle = androidx.compose.ui.text.TextStyle(
                     color = BanterColors.TextPrimary,
-                    fontSize = 14.sp
+                    fontSize = 15.sp
                 ),
+                cursorBrush = SolidColor(BanterColors.Blurple),
                 modifier = Modifier.fillMaxWidth(),
-                maxLines = 8
+                maxLines = 6
             )
         }
 
@@ -371,22 +371,28 @@ fun ChatInput(placeholder: String, onSend: (String) -> Unit) {
                 }
             },
             enabled = text.isNotBlank(),
-            modifier = Modifier.size(40.dp)
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(
+                    if (text.isNotBlank()) BanterColors.Blurple else BanterColors.Surface
+                )
         ) {
             Icon(
                 Icons.Filled.Send,
                 contentDescription = "Send",
-                tint = if (text.isNotBlank()) BanterColors.Blurple else BanterColors.TextMuted
+                tint = if (text.isNotBlank()) Color.White else BanterColors.TextMuted,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
 }
 
-private val dateFormat = SimpleDateFormat("MM/dd/yyyy hh:mm a", Locale.getDefault())
-private val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
-private val calendar = Calendar.getInstance()
+private val dateFormat = SimpleDateFormat("MM/dd/yyyy h:mm a", Locale.getDefault())
+private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
 
 fun formatTimestamp(ms: Long): String {
+    if (ms <= 0L) return ""
     val msgCal = Calendar.getInstance().apply { timeInMillis = ms }
     val now = Calendar.getInstance()
     return if (msgCal.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)
@@ -409,5 +415,6 @@ fun avatarColor(userId: Long): Color {
         Color(0xFF5865F2), Color(0xFF57F287), Color(0xFFFEE75C),
         Color(0xFFEB459E), Color(0xFFED4245), Color(0xFF3498DB)
     )
-    return colors[(userId % colors.size).toInt()]
+    val idx = ((userId % colors.size) + colors.size) % colors.size
+    return colors[idx.toInt()]
 }

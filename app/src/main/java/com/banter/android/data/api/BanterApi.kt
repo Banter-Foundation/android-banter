@@ -28,18 +28,16 @@ interface BanterApi {
     suspend fun listFriends(): Response<List<Friend>>
 
     @GET("v1/friends/requests")
-    suspend fun listFriendRequests(): Response<List<FriendRequest>>
+    suspend fun listFriendRequests(): Response<FriendRequestsResponse>
 
     @POST("v1/friends/requests")
     suspend fun sendFriendRequest(@Body body: FriendRequestInput): Response<FriendRequest>
 
     @POST("v1/friends/requests/{id}/accept")
-    suspend fun acceptFriendRequest(@Path("id") id: Long): Response<Friend>
+    suspend fun acceptFriendRequest(@Path("id") id: Long): Response<Unit>
 
     @POST("v1/friends/requests/{id}/decline")
     suspend fun declineFriendRequest(@Path("id") id: Long): Response<Unit>
-
-    // --- Presence ---
 
     @GET("v1/presence")
     suspend fun listPresence(): Response<List<PresenceEntry>>
@@ -47,16 +45,17 @@ interface BanterApi {
     // --- Servers ---
 
     @GET("v1/servers")
-    suspend fun listServers(): Response<List<Server>>
+    suspend fun listServers(): Response<List<ServerSummary>>
 
     @GET("v1/me/server-rail")
-    suspend fun serverRail(): Response<List<ServerRailEntry>>
+    suspend fun serverRail(): Response<ServerRail>
 
     @POST("v1/servers")
-    suspend fun createServer(@Body body: CreateServerRequest): Response<Server>
+    suspend fun createServer(@Body body: CreateServerRequest): Response<ServerHome>
 
+    /** Returns nested category layouts, not a flat ServerLayout. */
     @GET("v1/servers/{id}/layout")
-    suspend fun serverLayout(@Path("id") id: Long): Response<ServerLayout>
+    suspend fun serverLayout(@Path("id") id: Long): Response<List<CategoryLayout>>
 
     @GET("v1/servers/{id}/members")
     suspend fun members(@Path("id") id: Long): Response<List<Member>>
@@ -80,10 +79,10 @@ interface BanterApi {
     suspend fun createInvite(@Path("id") serverId: Long): Response<InviteResponse>
 
     @POST("v1/invites/{code}/join")
-    suspend fun joinInvite(@Path("code") code: String): Response<Server>
+    suspend fun joinInvite(@Path("code") code: String): Response<ServerHome>
 
     @GET("v1/servers/{id}/voice")
-    suspend fun serverVoice(@Path("id") id: Long): Response<List<VoiceMember>>
+    suspend fun serverVoice(@Path("id") id: Long): Response<List<VoiceRoster>>
 
     // --- Channels / Messages ---
 
@@ -100,7 +99,7 @@ interface BanterApi {
     @PATCH("v1/messages/{id}")
     suspend fun editMessage(
         @Path("id") id: Long,
-        @Body body: Map<String, String>
+        @Body body: EditMessageRequest
     ): Response<Message>
 
     @DELETE("v1/messages/{id}")
@@ -109,10 +108,10 @@ interface BanterApi {
     // --- DMs ---
 
     @GET("v1/dms")
-    suspend fun listDms(): Response<List<Dm>>
+    suspend fun listDms(): Response<List<DirectChat>>
 
     @POST("v1/dms")
-    suspend fun openDm(@Body body: Map<String, Long>): Response<Dm>
+    suspend fun openDm(@Body body: OpenDmRequest): Response<DirectChat>
 
     @GET("v1/dms/{id}/messages")
     suspend fun dmMessages(
@@ -142,7 +141,7 @@ interface BanterApi {
     suspend fun leaveVoice(): Response<Unit>
 
     @POST("v1/voice/flags")
-    suspend fun setVoiceFlags(@Body body: Map<String, Boolean>): Response<Unit>
+    suspend fun setVoiceFlags(@Body body: VoiceFlags): Response<Unit>
 
     // --- Profile ---
 
@@ -159,28 +158,12 @@ interface BanterApi {
     @DELETE("v1/me/avatar")
     suspend fun deleteAvatar(): Response<Unit>
 
-    // --- Mentions ---
-
     @GET("v1/mentions")
     suspend fun mentions(): Response<List<Mention>>
 
     @POST("v1/mentions/{id}/read")
     suspend fun readMention(@Path("id") id: Long): Response<Unit>
 
-    // --- Emotes ---
-
     @GET("v1/emote-picker")
     suspend fun emotePicker(): Response<List<EmotePack>>
 }
-
-data class EmotePack(
-    val id: Long,
-    val name: String,
-    val emotes: List<Emote>
-)
-
-data class Emote(
-    val id: Long,
-    val name: String,
-    val kind: String // "emote", "sticker"
-)

@@ -1,10 +1,17 @@
 package com.banter.android.ui.screen.main.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,101 +22,122 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.banter.android.data.model.GuildRole
 import com.banter.android.data.model.Member
 import com.banter.android.data.model.PresenceEntry
 import com.banter.android.ui.theme.BanterColors
 
+/** Full-screen members overlay (Discord mobile member list). */
 @Composable
-fun MemberListPanel(
+fun MemberListOverlay(
     members: List<Member>,
-    roles: List<GuildRole>,
     presence: Map<Long, PresenceEntry>,
     currentUserId: Long,
-    modifier: Modifier = Modifier
+    onClose: () -> Unit
 ) {
-    // Group members by their highest role
-    val membersWithRoles = members.map { member ->
-        val highestRole = member.roles
-            .mapNotNull { roleId -> roles.find { it.id == roleId } }
-            .maxByOrNull { it.position }
-        Pair(member, highestRole)
-    }
-
-    val onlineMembers = membersWithRoles.filter { (m, _) ->
-        (presence[m.id]?.state ?: "offline") != "offline"
-    }.sortedWith(compareByDescending<Pair<Member, GuildRole?>> { it.second?.position ?: 0 }
-        .thenBy { it.first.displayName })
-
-    val offlineMembers = membersWithRoles.filter { (m, _) ->
-        (presence[m.id]?.state ?: "offline") == "offline"
-    }.sortedBy { it.first.displayName }
-
-    LazyColumn(
-        modifier = modifier
-            .width(240.dp)
-            .fillMaxHeight()
-            .background(BanterColors.ChannelSidebar)
-            .padding(vertical = 8.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable(onClick = onClose)
     ) {
-        if (onlineMembers.isNotEmpty()) {
-            item {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(0.86f)
+                .align(Alignment.CenterEnd)
+                .background(BanterColors.ChannelSidebar)
+                .clickable(enabled = false) {}
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    "ONLINE — ${onlineMembers.size}",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = BanterColors.CategoryText,
-                    letterSpacing = 0.5.sp,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 4.dp, top = 8.dp)
+                    "Members — ${members.size}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = BanterColors.TextPrimary,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp)
                 )
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = BanterColors.TextSecondary)
+                }
             }
-            items(onlineMembers) { (member, role) ->
-                MemberRow(
-                    member = member,
-                    presenceState = presence[member.id]?.state ?: "online",
-                    role = role,
-                    isCurrentUser = member.id == currentUserId
-                )
-            }
-        }
+            HorizontalDivider(color = BanterColors.Divider)
 
-        if (offlineMembers.isNotEmpty()) {
-            item {
-                Text(
-                    "OFFLINE — ${offlineMembers.size}",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = BanterColors.CategoryText,
-                    letterSpacing = 0.5.sp,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 4.dp, top = 16.dp)
-                )
-            }
-            items(offlineMembers) { (member, role) ->
-                MemberRow(
-                    member = member,
-                    presenceState = "offline",
-                    role = role,
-                    isCurrentUser = member.id == currentUserId
-                )
+            val online = members.filter {
+                val state = presence[it.userId]?.state ?: it.presence ?: "offline"
+                state != "offline"
+            }.sortedBy { (it.nickname ?: it.displayName).lowercase() }
+
+            val offline = members.filter {
+                val state = presence[it.userId]?.state ?: it.presence ?: "offline"
+                state == "offline"
+            }.sortedBy { (it.nickname ?: it.displayName).lowercase() }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                if (online.isNotEmpty()) {
+                    item {
+                        Text(
+                            "ONLINE — ${online.size}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = BanterColors.CategoryText,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(start = 16.dp, bottom = 4.dp, top = 8.dp)
+                        )
+                    }
+                    items(online, key = { it.userId }) { member ->
+                        MemberRow(
+                            member = member,
+                            presenceState = presence[member.userId]?.state ?: member.presence ?: "online",
+                            isCurrentUser = member.userId == currentUserId
+                        )
+                    }
+                }
+                if (offline.isNotEmpty()) {
+                    item {
+                        Text(
+                            "OFFLINE — ${offline.size}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = BanterColors.CategoryText,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(start = 16.dp, bottom = 4.dp, top = 16.dp)
+                        )
+                    }
+                    items(offline, key = { it.userId }) { member ->
+                        MemberRow(
+                            member = member,
+                            presenceState = "offline",
+                            isCurrentUser = member.userId == currentUserId
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MemberRow(
-    member: Member,
-    presenceState: String,
-    role: GuildRole?,
-    isCurrentUser: Boolean
-) {
+private fun MemberRow(member: Member, presenceState: String, isCurrentUser: Boolean) {
     val displayName = member.nickname ?: member.displayName
+    val role = member.roles.filterNot { it.everyone }.maxByOrNull { it.position }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box {
@@ -117,19 +145,20 @@ private fun MemberRow(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .background(avatarColor(member.id).copy(
-                        alpha = if (presenceState == "offline") 0.5f else 1f
-                    )),
+                    .background(
+                        avatarColor(member.userId).copy(
+                            alpha = if (presenceState == "offline") 0.5f else 1f
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    displayName.take(1).uppercase(),
+                    displayName.take(1).uppercase().ifEmpty { "?" },
                     color = Color.White.copy(alpha = if (presenceState == "offline") 0.5f else 1f),
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
             }
-            // Presence dot
             Box(
                 modifier = Modifier
                     .size(12.dp)
@@ -159,14 +188,12 @@ private fun MemberRow(
                 overflow = TextOverflow.Ellipsis
             )
             if (role != null) {
-                Text(
-                    text = role.name,
-                    fontSize = 11.sp,
-                    color = if (role.color != 0L)
-                        Color(role.color.toInt() or (0xFF shl 24).toInt())
-                    else BanterColors.TextMuted,
-                    maxLines = 1
-                )
+                val roleColor = if (role.color != 0L) {
+                    Color((role.color.toInt() and 0xFFFFFF) or (0xFF shl 24))
+                } else {
+                    BanterColors.TextMuted
+                }
+                Text(role.name, fontSize = 11.sp, color = roleColor, maxLines = 1)
             }
         }
     }

@@ -6,8 +6,8 @@ data class Account(
     val id: Long,
     val username: String,
     @SerializedName("display_name") val displayName: String,
-    @SerializedName("has_avatar") val hasAvatar: Boolean,
-    @SerializedName("avatar_rev") val avatarRev: Long,
+    @SerializedName("has_avatar") val hasAvatar: Boolean = false,
+    @SerializedName("avatar_rev") val avatarRev: Long = 0,
     val bot: Boolean = false
 )
 
@@ -16,201 +16,245 @@ data class Session(
     val account: Account
 )
 
-data class LoginRequest(
-    val username: String,
-    val password: String
-)
-
-data class RegisterRequest(
-    val username: String,
-    val password: String
-)
+data class LoginRequest(val username: String, val password: String)
+data class RegisterRequest(val username: String, val password: String)
 
 data class Friend(
     val id: Long,
     val username: String,
     @SerializedName("display_name") val displayName: String,
-    @SerializedName("has_avatar") val hasAvatar: Boolean,
-    @SerializedName("avatar_rev") val avatarRev: Long
+    @SerializedName("has_avatar") val hasAvatar: Boolean = false,
+    @SerializedName("avatar_rev") val avatarRev: Long = 0
 )
 
+/** Matches server FriendRequest (flat ids/usernames, not nested Account). */
 data class FriendRequest(
     val id: Long,
-    val from: Account,
-    val to: Account
+    @SerializedName("from_id") val fromId: Long,
+    @SerializedName("from_username") val fromUsername: String,
+    @SerializedName("to_id") val toId: Long,
+    @SerializedName("to_username") val toUsername: String
 )
 
-data class Server(
+data class FriendRequestsResponse(
+    val incoming: List<FriendRequest> = emptyList(),
+    val outgoing: List<FriendRequest> = emptyList()
+)
+
+data class ServerSummary(
     val id: Long,
     val name: String,
-    @SerializedName("has_icon") val hasIcon: Boolean,
-    @SerializedName("icon_rev") val iconRev: Long,
     @SerializedName("owner_id") val ownerId: Long
 )
 
 data class ServerFolder(
     val id: Long,
+    @SerializedName("parent_id") val parentId: Long? = null,
     val name: String,
-    @SerializedName("server_ids") val serverIds: List<Long>
+    val color: Long = 0,
+    val position: Long = 0,
+    val collapsed: Boolean = false
 )
 
-data class ServerRailEntry(
-    val id: Long,
-    val name: String,
-    @SerializedName("has_icon") val hasIcon: Boolean,
-    @SerializedName("icon_rev") val iconRev: Long,
-    @SerializedName("folder_id") val folderId: Long?
+data class ServerRailServer(
+    val server: ServerSummary,
+    @SerializedName("folder_id") val folderId: Long? = null,
+    val position: Long = 0
 )
 
-data class Channel(
-    val id: Long,
-    @SerializedName("server_id") val serverId: Long,
-    @SerializedName("category_id") val categoryId: Long?,
-    val name: String,
-    val kind: String, // "text", "voice", "board"
-    val position: Int,
-    @SerializedName("has_icon") val hasIcon: Boolean = false,
-    @SerializedName("icon_rev") val iconRev: Long = 0
+/** GET /v1/me/server-rail */
+data class ServerRail(
+    val folders: List<ServerFolder> = emptyList(),
+    val servers: List<ServerRailServer> = emptyList()
 )
 
 data class Category(
     val id: Long,
     @SerializedName("server_id") val serverId: Long,
     val name: String,
-    val position: Int
+    val position: Long = 0
 )
 
-data class ServerLayout(
-    val categories: List<Category>,
-    val channels: List<Channel>
-)
-
-data class Message(
+data class Channel(
     val id: Long,
-    @SerializedName("channel_id") val channelId: Long?,
-    @SerializedName("dm_id") val dmId: Long?,
-    @SerializedName("author_id") val authorId: Long,
-    val author: Account,
-    val content: String,
-    @SerializedName("sent_at") val sentAt: Long,
-    @SerializedName("edited_at") val editedAt: Long?,
-    val attachments: List<Attachment> = emptyList(),
-    @SerializedName("reply_to") val replyTo: Message? = null
+    @SerializedName("server_id") val serverId: Long,
+    @SerializedName("category_id") val categoryId: Long,
+    val name: String,
+    val kind: String, // "text", "voice", "board", or plugin kind
+    val position: Long = 0,
+    val icon: String? = null
+)
+
+data class CategoryLayout(
+    val category: Category,
+    val channels: List<Channel> = emptyList()
+)
+
+/** GET /v1/servers/{id}/layout returns List<CategoryLayout> */
+data class ServerHome(
+    val server: ServerSummary,
+    val categories: List<CategoryLayout> = emptyList()
 )
 
 data class Attachment(
     val id: Long,
     val filename: String,
-    @SerializedName("byte_size") val byteSize: Long,
-    @SerializedName("content_type") val contentType: String,
-    val width: Int?,
-    val height: Int?
+    @SerializedName("byte_size") val byteSize: Long
 )
 
-data class Dm(
+data class Message(
+    val id: Long,
+    @SerializedName("author_id") val authorId: Long,
+    @SerializedName("author_username") val authorUsername: String,
+    @SerializedName("author_display_name") val authorDisplayName: String,
+    @SerializedName("author_nickname") val authorNickname: String? = null,
+    val body: String,
+    @SerializedName("reply_to") val replyTo: Long? = null,
+    @SerializedName("created_at") val createdAt: Long,
+    @SerializedName("edited_at") val editedAt: Long? = null,
+    val attachments: List<Attachment> = emptyList(),
+    @SerializedName("author_kind") val authorKind: String = "user",
+    @SerializedName("plugin_id") val pluginId: String? = null
+) {
+    val displayAuthor: String
+        get() = authorNickname?.takeIf { it.isNotBlank() } ?: authorDisplayName
+}
+
+/**
+ * ChatTarget wire form: { "type": "channel"|"direct", "id": N }
+ * (serde tag=type, content=id)
+ */
+data class ChatTarget(
+    val type: String,
+    val id: Long
+) {
+    companion object {
+        fun channel(id: Long) = ChatTarget("channel", id)
+        fun direct(id: Long) = ChatTarget("direct", id)
+    }
+}
+
+data class SendMessageRequest(
+    val target: ChatTarget,
+    val body: String,
+    @SerializedName("reply_to") val replyTo: Long? = null
+)
+
+data class EditMessageRequest(val body: String)
+
+/** GET /v1/dms — DirectChat has no last_message field. */
+data class DirectChat(
     val id: Long,
     @SerializedName("peer_id") val peerId: Long,
     @SerializedName("peer_username") val peerUsername: String,
     @SerializedName("peer_display_name") val peerDisplayName: String,
-    @SerializedName("peer_has_avatar") val peerHasAvatar: Boolean,
-    @SerializedName("peer_avatar_rev") val peerAvatarRev: Long,
-    @SerializedName("last_message") val lastMessage: Message?,
-    @SerializedName("call_state") val callState: String? // "idle", "ringing", "active"
+    @SerializedName("peer_has_avatar") val peerHasAvatar: Boolean = false,
+    @SerializedName("peer_avatar_rev") val peerAvatarRev: Long = 0
 )
 
 data class Member(
-    val id: Long,
+    @SerializedName("user_id") val userId: Long,
     val username: String,
     @SerializedName("display_name") val displayName: String,
-    @SerializedName("has_avatar") val hasAvatar: Boolean,
-    @SerializedName("avatar_rev") val avatarRev: Long,
-    val nickname: String?,
-    val roles: List<Long> = emptyList()
+    val nickname: String? = null,
+    @SerializedName("is_owner") val isOwner: Boolean = false,
+    @SerializedName("has_avatar") val hasAvatar: Boolean = false,
+    @SerializedName("avatar_rev") val avatarRev: Long = 0,
+    val bot: Boolean = false,
+    val roles: List<GuildRole> = emptyList(),
+    val presence: String? = null,
+    @SerializedName("custom_status") val customStatus: String? = null
 )
 
 data class GuildRole(
     val id: Long,
     @SerializedName("server_id") val serverId: Long,
     val name: String,
-    val color: Long,
-    val position: Int,
-    @SerializedName("is_owner") val isOwner: Boolean = false
+    val color: Long = 0,
+    val position: Long = 0,
+    val hoist: Boolean = false,
+    val permissions: Long = 0,
+    val everyone: Boolean = false
+)
+
+data class VoiceFlags(
+    val muted: Boolean = false,
+    val deafened: Boolean = false,
+    @SerializedName("push_to_talk") val pushToTalk: Boolean = false,
+    val transmitting: Boolean = false,
+    val camera: Boolean = false,
+    val screen: Boolean = false
 )
 
 data class VoiceMember(
     @SerializedName("user_id") val userId: Long,
-    @SerializedName("channel_id") val channelId: Long,
-    val muted: Boolean,
-    val deafened: Boolean,
-    val camera: Boolean,
-    val screen: Boolean
+    val flags: VoiceFlags = VoiceFlags(),
+    @SerializedName("prefer_p2p_video") val preferP2pVideo: Boolean = false
 )
 
-data class VoiceState(
-    @SerializedName("channel_id") val channelId: Long?,
-    val members: List<VoiceMember>
+data class VoiceRoster(
+    @SerializedName("channel_id") val channelId: Long,
+    val members: List<VoiceMember> = emptyList()
 )
 
 data class PresenceEntry(
     @SerializedName("user_id") val userId: Long,
-    val state: String, // "online", "idle", "dnd", "offline"
-    @SerializedName("custom_status") val customStatus: String?
+    val state: String, // "online", "idle", "offline"
+    @SerializedName("custom_status") val customStatus: String? = null
 )
 
 data class UserProfile(
     val id: Long,
     val username: String,
     @SerializedName("display_name") val displayName: String,
-    @SerializedName("has_avatar") val hasAvatar: Boolean,
-    @SerializedName("avatar_rev") val avatarRev: Long,
-    val nickname: String?,
-    @SerializedName("is_self") val isSelf: Boolean,
-    @SerializedName("is_friend") val isFriend: Boolean,
-    @SerializedName("about_me") val aboutMe: String?,
-    val pronouns: String?,
-    @SerializedName("custom_status") val customStatus: String?,
-    @SerializedName("member_since") val memberSince: Long,
-    @SerializedName("has_banner") val hasBanner: Boolean,
-    @SerializedName("banner_rev") val bannerRev: Long,
-    @SerializedName("theme_primary") val themePrimary: Long,
-    @SerializedName("theme_secondary") val themeSecondary: Long
+    @SerializedName("has_avatar") val hasAvatar: Boolean = false,
+    @SerializedName("avatar_rev") val avatarRev: Long = 0,
+    val nickname: String? = null,
+    @SerializedName("is_self") val isSelf: Boolean = false,
+    @SerializedName("is_friend") val isFriend: Boolean = false,
+    @SerializedName("about_me") val aboutMe: String? = null,
+    val pronouns: String? = null,
+    @SerializedName("custom_status") val customStatus: String? = null,
+    @SerializedName("member_since") val memberSince: Long = 0,
+    @SerializedName("has_banner") val hasBanner: Boolean = false,
+    @SerializedName("banner_rev") val bannerRev: Long = 0
 )
 
 data class Mention(
     val id: Long,
     @SerializedName("message_id") val messageId: Long,
-    @SerializedName("channel_id") val channelId: Long?,
-    @SerializedName("server_id") val serverId: Long?,
-    val read: Boolean,
-    val message: Message?
-)
-
-data class SendMessageRequest(
-    val content: String,
     @SerializedName("channel_id") val channelId: Long? = null,
-    @SerializedName("dm_id") val dmId: Long? = null,
-    @SerializedName("reply_to") val replyTo: Long? = null
+    @SerializedName("server_id") val serverId: Long? = null,
+    val read: Boolean = false
 )
 
 data class CreateServerRequest(val name: String)
-
 data class CreateChannelRequest(
     val name: String,
     val kind: String = "text",
     @SerializedName("category_id") val categoryId: Long? = null
 )
-
 data class CreateCategoryRequest(val name: String)
-
 data class InviteResponse(val code: String)
-
-data class JoinVoiceRequest(
-    @SerializedName("channel_id") val channelId: Long
+data class JoinVoiceRequest(@SerializedName("channel_id") val channelId: Long)
+data class FriendRequestInput(val username: String)
+data class OpenDmRequest(
+    @SerializedName("user_id") val userId: Long? = null,
+    val username: String? = null
+)
+data class ServerVersion(
+    val version: String = "",
+    val protocol: Int = 0
 )
 
-data class FriendRequestInput(val username: String)
+data class EmotePack(
+    val id: Long,
+    val name: String,
+    val emotes: List<Emote> = emptyList()
+)
 
-data class ServerVersion(
-    val version: String,
-    val protocol: Int
+data class Emote(
+    val id: Long,
+    val name: String,
+    val kind: String = "emote"
 )

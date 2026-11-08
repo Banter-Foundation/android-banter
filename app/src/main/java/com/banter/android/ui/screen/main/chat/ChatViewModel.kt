@@ -28,7 +28,12 @@ class ChatViewModel @Inject constructor(
     val uiState: StateFlow<ChatUiState> = _uiState
 
     fun loadChannel(id: Long, isDm: Boolean, name: String = "") {
-        _uiState.value = ChatUiState(channelId = id, isDm = isDm, channelName = name, isLoading = true)
+        _uiState.value = ChatUiState(
+            channelId = id,
+            isDm = isDm,
+            channelName = name,
+            isLoading = true
+        )
         viewModelScope.launch {
             val result = if (isDm) {
                 messageRepository.dmMessages(id)
@@ -36,18 +41,24 @@ class ChatViewModel @Inject constructor(
                 messageRepository.channelMessages(id)
             }
             result.onSuccess { msgs ->
-                _uiState.update { it.copy(
-                    messages = msgs.sortedBy { m -> m.sentAt },
-                    isLoading = false
-                )}
+                _uiState.update {
+                    it.copy(
+                        messages = msgs.sortedBy { m -> m.createdAt },
+                        isLoading = false,
+                        error = null
+                    )
+                }
             }.onFailure { err ->
-                _uiState.update { it.copy(isLoading = false, error = err.message) }
+                _uiState.update {
+                    it.copy(isLoading = false, error = err.message ?: "Failed to load messages")
+                }
             }
         }
     }
 
     fun sendMessage(content: String) {
         val state = _uiState.value
+        if (content.isBlank() || state.channelId == 0L) return
         viewModelScope.launch {
             val result = if (state.isDm) {
                 messageRepository.sendDmMessage(state.channelId, content)
@@ -55,22 +66,27 @@ class ChatViewModel @Inject constructor(
                 messageRepository.sendChannelMessage(state.channelId, content)
             }
             result.onSuccess { msg ->
-                _uiState.update { it.copy(messages = it.messages + msg) }
+                _uiState.update { current ->
+                    if (current.messages.any { it.id == msg.id }) current
+                    else current.copy(messages = current.messages + msg)
+                }
+            }.onFailure { err ->
+                _uiState.update { it.copy(error = err.message) }
             }
         }
     }
 
     fun onNewMessage(message: Message) {
-        val exists = _uiState.value.messages.any { it.id == message.id }
-        if (!exists) {
-            _uiState.update { it.copy(messages = it.messages + message) }
+        _uiState.update { state ->
+            if (state.messages.any { it.id == message.id }) state
+            else state.copy(messages = state.messages + message)
         }
     }
 
-    fun onMessageEdited(id: Long, newContent: String) {
+    fun onMessageEdited(message: Message) {
         _uiState.update { state ->
             state.copy(messages = state.messages.map { msg ->
-                if (msg.id == id) msg.copy(content = newContent) else msg
+                if (msg.id == message.id) message else msg
             })
         }
     }
@@ -84,7 +100,7 @@ class ChatViewModel @Inject constructor(
     fun loadMore() {
         val state = _uiState.value
         if (state.isLoading || !state.hasMore) return
-        val oldest = state.messages.firstOrNull()?.sentAt ?: return
+        val oldest = state.messages.firstOrNull()?.createdAt ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             val result = if (state.isDm) {
@@ -93,11 +109,13 @@ class ChatViewModel @Inject constructor(
                 messageRepository.channelMessages(state.channelId, before = oldest)
             }
             result.onSuccess { msgs ->
-                _uiState.update { it.copy(
-                    messages = msgs.sortedBy { m -> m.sentAt } + it.messages,
-                    isLoading = false,
-                    hasMore = msgs.size >= 50
-                )}
+                _uiState.update {
+                    it.copy(
+                        messages = msgs.sortedBy { m -> m.createdAt } + it.messages,
+                        isLoading = false,
+                        hasMore = msgs.size >= 50
+                    )
+                }
             }.onFailure {
                 _uiState.update { it.copy(isLoading = false) }
             }

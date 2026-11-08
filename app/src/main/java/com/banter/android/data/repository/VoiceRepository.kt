@@ -2,6 +2,7 @@ package com.banter.android.data.repository
 
 import com.banter.android.data.api.BanterApi
 import com.banter.android.data.model.JoinVoiceRequest
+import com.banter.android.data.model.VoiceFlags
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,13 +19,18 @@ class VoiceRepository @Inject constructor(private val api: BanterApi) {
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
     }
 
-    suspend fun setFlags(muted: Boolean, deafened: Boolean, camera: Boolean, screen: Boolean): Result<Unit> = runCatching {
+    suspend fun setFlags(
+        muted: Boolean,
+        deafened: Boolean,
+        camera: Boolean = false,
+        screen: Boolean = false
+    ): Result<Unit> = runCatching {
         val r = api.setVoiceFlags(
-            mapOf(
-                "muted" to muted,
-                "deafened" to deafened,
-                "camera" to camera,
-                "screen" to screen
+            VoiceFlags(
+                muted = muted,
+                deafened = deafened,
+                camera = camera,
+                screen = screen
             )
         )
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")

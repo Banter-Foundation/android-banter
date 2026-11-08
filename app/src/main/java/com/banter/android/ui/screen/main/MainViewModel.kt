@@ -15,37 +15,42 @@ data class MainUiState(
     val currentUserId: Long = 0,
     val currentUsername: String = "",
     val currentDisplayName: String = "",
-    val servers: List<ServerRailEntry> = emptyList(),
+    val servers: List<ServerSummary> = emptyList(),
     val selectedServerId: Long? = null,
+    val selectedServerName: String = "",
     val selectedChannelId: Long? = null,
+    val selectedChannelName: String = "",
     val selectedDmId: Long? = null,
-    val serverLayout: ServerLayout? = null,
+    val selectedDmPeerName: String = "",
+    /** Nested category → channels from /v1/servers/{id}/layout */
+    val layout: List<CategoryLayout> = emptyList(),
     val members: List<Member> = emptyList(),
     val roles: List<GuildRole> = emptyList(),
-    val voiceMembers: List<VoiceMember> = emptyList(),
-    val dms: List<Dm> = emptyList(),
+    /** channelId → voice members currently in that channel */
+    val voiceByChannel: Map<Long, List<VoiceMember>> = emptyMap(),
+    val dms: List<DirectChat> = emptyList(),
     val friends: List<Friend> = emptyList(),
     val friendRequests: List<FriendRequest> = emptyList(),
     val presence: Map<Long, PresenceEntry> = emptyMap(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    // voice state
     val inVoiceChannelId: Long? = null,
     val isMuted: Boolean = false,
     val isDeafened: Boolean = false,
     val hasCamera: Boolean = false,
     val hasScreen: Boolean = false,
-    // navigation
-    val activeTab: MainTab = MainTab.HOME
+    val activeTab: MainTab = MainTab.HOME,
+    /** Discord-mobile: true when chat/members fills the screen. */
+    val inConversation: Boolean = false,
+    val showMembers: Boolean = false
 )
 
-enum class MainTab { HOME, SERVERS, DMS, MENTIONS }
+enum class MainTab { HOME, SERVERS }
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val sessionStore: SessionStore,
     private val serverRepository: ServerRepository,
-    private val messageRepository: MessageRepository,
     private val dmRepository: DmRepository,
     private val friendRepository: FriendRepository,
     private val voiceRepository: VoiceRepository,
@@ -64,15 +69,18 @@ class MainViewModel @Inject constructor(
             val token = sessionStore.token.first() ?: ""
             val serverUrl = sessionStore.serverUrl.first() ?: "http://127.0.0.1:3970"
 
-            _uiState.update { it.copy(
-                currentUserId = userId,
-                currentUsername = username,
-                currentDisplayName = displayName
-            )}
+            _uiState.update {
+                it.copy(
+                    currentUserId = userId,
+                    currentUsername = username,
+                    currentDisplayName = displayName
+                )
+            }
 
-            webSocketManager.connect(serverUrl, token)
+            if (token.isNotBlank()) {
+                webSocketManager.connect(serverUrl, token)
+            }
             observeWebSocketEvents()
-
             loadServers()
             loadDms()
             loadFriends()
@@ -83,87 +91,82 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             webSocketManager.events.collect { event ->
                 when (event) {
-                    is ServerEvent.NewMessage -> {
-                        // Handled by ChatViewModel
-                    }
                     is ServerEvent.Presence -> {
                         _uiState.update { state ->
                             val updated = state.presence.toMutableMap()
-                            updated[event.userId] = PresenceEntry(event.userId, event.state, event.customStatus)
+                            updated[event.userId] =
+                                PresenceEntry(event.userId, event.state, event.customStatus)
                             state.copy(presence = updated)
                         }
                     }
-                    is ServerEvent.VoiceJoin -> {
-                        if (event.userId == _uiState.value.currentUserId) {
-                            _uiState.update { it.copy(inVoiceChannelId = event.channelId) }
-                        }
-                        refreshVoiceForCurrentServer()
-                    }
-                    is ServerEvent.VoiceLeave -> {
-                        if (event.userId == _uiState.value.currentUserId) {
-                            _uiState.update { it.copy(inVoiceChannelId = null) }
-                        }
-                        refreshVoiceForCurrentServer()
-                    }
-                    is ServerEvent.VoiceFlags -> {
-                        if (event.userId == _uiState.value.currentUserId) {
-                            _uiState.update { it.copy(
-                                isMuted = event.muted,
-                                isDeafened = event.deafened,
-                                hasCamera = event.camera,
-                                hasScreen = event.screen
-                            )}
-                        }
-                        refreshVoiceForCurrentServer()
-                    }
-                    is ServerEvent.DmOpen -> {
-                        val existing = _uiState.value.dms.any { it.id == event.dm.id }
-                        if (!existing) {
-                            _uiState.update { it.copy(dms = listOf(event.dm) + it.dms) }
+                    is ServerEvent.Voice -> {
+                        _uiState.update { state ->
+                            val map = state.voiceByChannel.toMutableMap()
+                            map[event.channelId] = event.members
+                            val selfIn = event.members.any { it.userId == state.currentUserId }
+                            state.copy(
+                                voiceByChannel = map,
+                                inVoiceChannelId = when {
+                                    selfIn -> event.channelId
+                                    state.inVoiceChannelId == event.channelId -> null
+                                    else -> state.inVoiceChannelId
+                                }
+                            )
                         }
                     }
-                    is ServerEvent.FriendAdded -> {
-                        _uiState.update { it.copy(friends = it.friends + event.friend) }
+                    is ServerEvent.FriendRequestEvent -> {
+                        _uiState.update {
+                            if (it.friendRequests.any { r -> r.id == event.request.id }) it
+                            else it.copy(friendRequests = it.friendRequests + event.request)
+                        }
                     }
-                    is ServerEvent.FriendRemoved -> {
-                        _uiState.update { it.copy(friends = it.friends.filter { f -> f.id != event.userId }) }
-                    }
-                    is ServerEvent.FriendRequestReceived -> {
-                        _uiState.update { it.copy(friendRequests = it.friendRequests + event.request) }
-                    }
+                    is ServerEvent.FriendsChanged -> loadFriends()
                     else -> {}
                 }
             }
         }
     }
 
-    private fun refreshVoiceForCurrentServer() {
-        val serverId = _uiState.value.selectedServerId ?: return
-        viewModelScope.launch {
-            serverRepository.serverVoice(serverId).onSuccess { members ->
-                _uiState.update { it.copy(voiceMembers = members) }
-            }
-        }
-    }
-
     fun loadServers() {
         viewModelScope.launch {
-            serverRepository.serverRail().onSuccess { rail ->
-                _uiState.update { it.copy(servers = rail) }
+            // Prefer rail; fall back to flat list so guilds still show.
+            val rail = serverRepository.serverRail()
+            rail.onSuccess { data ->
+                val servers = data.servers
+                    .sortedBy { it.position }
+                    .map { it.server }
+                if (servers.isNotEmpty()) {
+                    _uiState.update { it.copy(servers = servers) }
+                    return@launch
+                }
+            }
+            serverRepository.listServers().onSuccess { list ->
+                _uiState.update { it.copy(servers = list) }
+            }.onFailure { err ->
+                _uiState.update { it.copy(error = err.message) }
             }
         }
     }
 
     fun selectServer(serverId: Long) {
-        _uiState.update { it.copy(
-            selectedServerId = serverId,
-            selectedChannelId = null,
-            selectedDmId = null,
-            activeTab = MainTab.SERVERS
-        )}
+        val name = _uiState.value.servers.find { it.id == serverId }?.name ?: ""
+        _uiState.update {
+            it.copy(
+                selectedServerId = serverId,
+                selectedServerName = name,
+                selectedChannelId = null,
+                selectedChannelName = "",
+                selectedDmId = null,
+                selectedDmPeerName = "",
+                inConversation = false,
+                showMembers = false,
+                activeTab = MainTab.SERVERS,
+                layout = emptyList()
+            )
+        }
         viewModelScope.launch {
             serverRepository.serverLayout(serverId).onSuccess { layout ->
-                _uiState.update { it.copy(serverLayout = layout) }
+                _uiState.update { it.copy(layout = layout) }
             }
             serverRepository.members(serverId).onSuccess { members ->
                 _uiState.update { it.copy(members = members) }
@@ -171,24 +174,70 @@ class MainViewModel @Inject constructor(
             serverRepository.roles(serverId).onSuccess { roles ->
                 _uiState.update { it.copy(roles = roles) }
             }
-            serverRepository.serverVoice(serverId).onSuccess { voice ->
-                _uiState.update { it.copy(voiceMembers = voice) }
+            serverRepository.serverVoice(serverId).onSuccess { rosters ->
+                _uiState.update { state ->
+                    state.copy(voiceByChannel = rosters.associate { it.channelId to it.members })
+                }
             }
         }
     }
 
-    fun selectChannel(channelId: Long) {
-        _uiState.update { it.copy(selectedChannelId = channelId, selectedDmId = null) }
+    fun selectChannel(channelId: Long, channelName: String = "") {
+        val name = channelName.ifBlank {
+            _uiState.value.layout
+                .flatMap { it.channels }
+                .find { it.id == channelId }
+                ?.name
+                ?: "#channel"
+        }
+        _uiState.update {
+            it.copy(
+                selectedChannelId = channelId,
+                selectedChannelName = name,
+                selectedDmId = null,
+                selectedDmPeerName = "",
+                inConversation = true,
+                showMembers = false
+            )
+        }
     }
 
-    fun selectDm(dmId: Long) {
-        _uiState.update { it.copy(
-            selectedDmId = dmId,
-            selectedChannelId = null,
-            selectedServerId = null,
-            serverLayout = null,
-            activeTab = MainTab.DMS
-        )}
+    fun selectDm(dmId: Long, peerName: String = "") {
+        val name = peerName.ifBlank {
+            _uiState.value.dms.find { it.id == dmId }?.peerDisplayName ?: "DM"
+        }
+        _uiState.update {
+            it.copy(
+                selectedDmId = dmId,
+                selectedDmPeerName = name,
+                selectedChannelId = null,
+                selectedChannelName = "",
+                selectedServerId = null,
+                selectedServerName = "",
+                layout = emptyList(),
+                inConversation = true,
+                showMembers = false,
+                activeTab = MainTab.HOME
+            )
+        }
+    }
+
+    /** Discord-mobile back: leave conversation, return to channel/DM list. */
+    fun leaveConversation() {
+        _uiState.update {
+            it.copy(
+                selectedChannelId = null,
+                selectedChannelName = "",
+                selectedDmId = null,
+                selectedDmPeerName = "",
+                inConversation = false,
+                showMembers = false
+            )
+        }
+    }
+
+    fun toggleMembers() {
+        _uiState.update { it.copy(showMembers = !it.showMembers) }
     }
 
     fun loadDms() {
@@ -205,7 +254,7 @@ class MainViewModel @Inject constructor(
                 _uiState.update { it.copy(friends = friends) }
             }
             friendRepository.listRequests().onSuccess { reqs ->
-                _uiState.update { it.copy(friendRequests = reqs) }
+                _uiState.update { it.copy(friendRequests = reqs.incoming) }
             }
             friendRepository.listPresence().onSuccess { pres ->
                 _uiState.update { state ->
@@ -216,7 +265,22 @@ class MainViewModel @Inject constructor(
     }
 
     fun setActiveTab(tab: MainTab) {
-        _uiState.update { it.copy(activeTab = tab, selectedServerId = null, serverLayout = null) }
+        _uiState.update {
+            it.copy(
+                activeTab = tab,
+                selectedServerId = if (tab == MainTab.HOME) null else it.selectedServerId,
+                selectedServerName = if (tab == MainTab.HOME) "" else it.selectedServerName,
+                layout = if (tab == MainTab.HOME) emptyList() else it.layout,
+                selectedChannelId = null,
+                selectedDmId = null,
+                inConversation = false,
+                showMembers = false
+            )
+        }
+        if (tab == MainTab.HOME) {
+            loadDms()
+            loadFriends()
+        }
     }
 
     fun joinVoice(channelId: Long) {
@@ -248,23 +312,32 @@ class MainViewModel @Inject constructor(
         val current = _uiState.value
         val newDeafened = !current.isDeafened
         viewModelScope.launch {
-            voiceRepository.setFlags(current.isMuted, newDeafened, current.hasCamera, current.hasScreen)
-                .onSuccess { _uiState.update { it.copy(isDeafened = newDeafened) } }
+            voiceRepository.setFlags(current.isMuted || newDeafened, newDeafened, current.hasCamera, current.hasScreen)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            isDeafened = newDeafened,
+                            isMuted = if (newDeafened) true else it.isMuted
+                        )
+                    }
+                }
         }
     }
 
     fun createServer(name: String) {
         viewModelScope.launch {
-            serverRepository.createServer(name).onSuccess { _ ->
+            serverRepository.createServer(name).onSuccess { home ->
                 loadServers()
+                selectServer(home.server.id)
             }
         }
     }
 
     fun joinServerByInvite(code: String) {
         viewModelScope.launch {
-            serverRepository.joinInvite(code).onSuccess { _ ->
+            serverRepository.joinInvite(code).onSuccess { home ->
                 loadServers()
+                selectServer(home.server.id)
             }
         }
     }
@@ -284,21 +357,21 @@ class MainViewModel @Inject constructor(
                 if (!existing) {
                     _uiState.update { it.copy(dms = listOf(dm) + it.dms) }
                 }
-                selectDm(dm.id)
+                selectDm(dm.id, dm.peerDisplayName)
             }
         }
     }
 
     fun sendFriendRequest(username: String) {
-        viewModelScope.launch {
-            friendRepository.sendRequest(username)
-        }
+        viewModelScope.launch { friendRepository.sendRequest(username) }
     }
 
     fun acceptFriendRequest(id: Long) {
         viewModelScope.launch {
-            friendRepository.acceptRequest(id).onSuccess { _ ->
-                _uiState.update { it.copy(friendRequests = it.friendRequests.filter { r -> r.id != id }) }
+            friendRepository.acceptRequest(id).onSuccess {
+                _uiState.update {
+                    it.copy(friendRequests = it.friendRequests.filter { r -> r.id != id })
+                }
                 loadFriends()
             }
         }
@@ -307,7 +380,9 @@ class MainViewModel @Inject constructor(
     fun declineFriendRequest(id: Long) {
         viewModelScope.launch {
             friendRepository.declineRequest(id).onSuccess {
-                _uiState.update { it.copy(friendRequests = it.friendRequests.filter { r -> r.id != id }) }
+                _uiState.update {
+                    it.copy(friendRequests = it.friendRequests.filter { r -> r.id != id })
+                }
             }
         }
     }

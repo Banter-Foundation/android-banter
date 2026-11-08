@@ -8,32 +8,54 @@ import javax.inject.Singleton
 @Singleton
 class MessageRepository @Inject constructor(private val api: BanterApi) {
 
-    suspend fun channelMessages(channelId: Long, before: Long? = null): Result<List<Message>> = runCatching {
-        val r = api.channelMessages(channelId, before)
-        if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
+    suspend fun channelMessages(channelId: Long, before: Long? = null): Result<List<Message>> =
+        runCatching {
+            val r = api.channelMessages(channelId, before)
+            if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed to load messages")
+            r.body() ?: emptyList()
+        }
+
+    suspend fun dmMessages(dmId: Long, before: Long? = null): Result<List<Message>> =
+        runCatching {
+            val r = api.dmMessages(dmId, before)
+            if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed to load DM messages")
+            r.body() ?: emptyList()
+        }
+
+    suspend fun sendChannelMessage(
+        channelId: Long,
+        content: String,
+        replyTo: Long? = null
+    ): Result<Message> = runCatching {
+        val r = api.sendMessage(
+            SendMessageRequest(
+                target = ChatTarget.channel(channelId),
+                body = content,
+                replyTo = replyTo
+            )
+        )
+        if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed to send")
         r.body()!!
     }
 
-    suspend fun dmMessages(dmId: Long, before: Long? = null): Result<List<Message>> = runCatching {
-        val r = api.dmMessages(dmId, before)
-        if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
-        r.body()!!
-    }
-
-    suspend fun sendChannelMessage(channelId: Long, content: String, replyTo: Long? = null): Result<Message> = runCatching {
-        val r = api.sendMessage(SendMessageRequest(content, channelId = channelId, replyTo = replyTo))
-        if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
-        r.body()!!
-    }
-
-    suspend fun sendDmMessage(dmId: Long, content: String, replyTo: Long? = null): Result<Message> = runCatching {
-        val r = api.sendMessage(SendMessageRequest(content, dmId = dmId, replyTo = replyTo))
-        if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
+    suspend fun sendDmMessage(
+        dmId: Long,
+        content: String,
+        replyTo: Long? = null
+    ): Result<Message> = runCatching {
+        val r = api.sendMessage(
+            SendMessageRequest(
+                target = ChatTarget.direct(dmId),
+                body = content,
+                replyTo = replyTo
+            )
+        )
+        if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed to send")
         r.body()!!
     }
 
     suspend fun editMessage(id: Long, content: String): Result<Message> = runCatching {
-        val r = api.editMessage(id, mapOf("content" to content))
+        val r = api.editMessage(id, EditMessageRequest(content))
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
         r.body()!!
     }

@@ -11,6 +11,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -22,13 +23,13 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object AppModule {
 
-    private const val DEFAULT_SERVER_URL = "http://127.0.0.1:3970/"
+    /** Placeholder only — HostSelectionInterceptor rewrites every request. */
+    private const val PLACEHOLDER_BASE = "http://127.0.0.1:3970/"
+    const val DEFAULT_SERVER_URL = "http://127.0.0.1:3970"
 
     @Provides
     @Singleton
-    fun provideGson(): Gson = GsonBuilder()
-        .serializeNulls()
-        .create()
+    fun provideGson(): Gson = GsonBuilder().create()
 
     @Provides
     @Singleton
@@ -38,6 +39,25 @@ object AppModule {
         }
         val client = OkHttpClient.Builder()
             .addInterceptor(logging)
+            // Rewrite host/port from DataStore so changing the server URL works
+            // without recreating Retrofit.
+            .addInterceptor { chain ->
+                val stored = runBlocking { sessionStore.serverUrl.first() } ?: DEFAULT_SERVER_URL
+                val base = (if (stored.endsWith("/")) stored else "$stored/")
+                    .toHttpUrlOrNull()
+                val original = chain.request()
+                val rewritten = if (base != null) {
+                    val newUrl = original.url.newBuilder()
+                        .scheme(base.scheme)
+                        .host(base.host)
+                        .port(base.port)
+                        .build()
+                    original.newBuilder().url(newUrl).build()
+                } else {
+                    original
+                }
+                chain.proceed(rewritten)
+            }
             .addInterceptor { chain ->
                 val token = runBlocking { sessionStore.token.first() }
                 val req = if (token != null) {
@@ -58,21 +78,12 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(
-        okHttp3Client: OkHttp3Client,
-        gson: Gson,
-        sessionStore: SessionStore
-    ): Retrofit {
-        val baseUrl = runBlocking {
-            sessionStore.serverUrl.first() ?: DEFAULT_SERVER_URL
-        }.let { if (it.endsWith("/")) it else "$it/" }
-
-        return Retrofit.Builder()
-            .baseUrl(baseUrl)
+    fun provideRetrofit(okHttp3Client: OkHttp3Client, gson: Gson): Retrofit =
+        Retrofit.Builder()
+            .baseUrl(PLACEHOLDER_BASE)
             .client(okHttp3Client.client)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
-    }
 
     @Provides
     @Singleton

@@ -8,14 +8,14 @@ import javax.inject.Singleton
 @Singleton
 class DmRepository @Inject constructor(private val api: BanterApi) {
 
-    suspend fun listDms(): Result<List<Dm>> = runCatching {
+    suspend fun listDms(): Result<List<DirectChat>> = runCatching {
         val r = api.listDms()
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
-        r.body()!!
+        r.body() ?: emptyList()
     }
 
-    suspend fun openDm(userId: Long): Result<Dm> = runCatching {
-        val r = api.openDm(mapOf("user_id" to userId))
+    suspend fun openDm(userId: Long): Result<DirectChat> = runCatching {
+        val r = api.openDm(OpenDmRequest(userId = userId))
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
         r.body()!!
     }

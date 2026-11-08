@@ -2,9 +2,11 @@
 
 Native Android client for [Banter](https://github.com/Banter-Foundation/Banter). Kotlin + Jetpack Compose, Discord-like dark UI.
 
-## Alpha 1
+## Alpha 2
 
-Tag: `v1.0.0-alpha.1`
+Tag: `v1.0.0-alpha.2`
+
+Mobile-first Discord-style shell (full-screen chat with back, home Messages/Friends tabs, member overlay). Fixes guild rail parsing, DM message loading, and DM crash from mismatched API models.
 
 Install the APK from [Releases](https://github.com/Banter-Foundation/android-banter/releases), or build locally:
 

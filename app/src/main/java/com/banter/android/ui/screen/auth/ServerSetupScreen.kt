@@ -96,8 +96,7 @@ fun ServerSetupScreen(
                     Button(
                         onClick = {
                             val url = serverUrl.trim().ifEmpty { "http://127.0.0.1:3970" }
-                            viewModel.saveServerUrl(url)
-                            onDone()
+                            viewModel.saveServerUrl(url, onDone = onDone)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -110,7 +109,9 @@ fun ServerSetupScreen(
                 }
             }
 
-            TextButton(onClick = onDone) {
+            TextButton(onClick = {
+                viewModel.saveServerUrl("http://127.0.0.1:3970", onDone = onDone)
+            }) {
                 Text("Use local server (127.0.0.1:3970)", color = BanterColors.TextLink, fontSize = 14.sp)
             }
         }

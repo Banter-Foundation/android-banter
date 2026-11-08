@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.HeadsetOff
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -20,8 +19,11 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,126 +32,129 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.banter.android.data.model.Category
+import com.banter.android.data.model.CategoryLayout
 import com.banter.android.data.model.Channel
-import com.banter.android.data.model.Dm
+import com.banter.android.data.model.DirectChat
+import com.banter.android.data.model.VoiceMember
 import com.banter.android.ui.screen.main.MainTab
 import com.banter.android.ui.screen.main.MainUiState
 import com.banter.android.ui.theme.BanterColors
-import java.text.SimpleDateFormat
-import java.util.*
 
 @Composable
 fun ChannelSidebar(
     uiState: MainUiState,
-    onChannelClick: (Long) -> Unit,
-    onDmClick: (Long) -> Unit,
+    onChannelClick: (Long, String) -> Unit,
+    onDmClick: (Long, String) -> Unit,
     onVoiceJoin: (Long) -> Unit,
     onVoiceLeave: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleDeafen: () -> Unit,
     onLogout: () -> Unit,
-    onMemberListToggle: () -> Unit,
     onAddFriendClick: () -> Unit,
+    hideHeader: Boolean = false,
+    userBarOnly: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
-            .width(240.dp)
-            .fillMaxHeight()
+            .fillMaxWidth()
+            .then(if (userBarOnly) Modifier else Modifier.fillMaxHeight())
             .background(BanterColors.ChannelSidebar)
     ) {
-        // Header
-        SidebarHeader(uiState, onAddFriendClick)
+        if (userBarOnly) {
+            if (uiState.inVoiceChannelId != null) {
+                VoiceBar(
+                    isMuted = uiState.isMuted,
+                    isDeafened = uiState.isDeafened,
+                    onToggleMute = onToggleMute,
+                    onToggleDeafen = onToggleDeafen,
+                    onLeave = onVoiceLeave
+                )
+            }
+            UserBar(
+                displayName = uiState.currentDisplayName,
+                username = uiState.currentUsername,
+                onLogout = onLogout
+            )
+        } else {
+            if (!hideHeader) {
+                SidebarHeader(uiState, onAddFriendClick)
+            }
 
-        // Content
-        Box(modifier = Modifier.weight(1f)) {
-            when {
-                uiState.selectedServerId != null && uiState.serverLayout != null -> {
-                    ServerChannelList(
-                        layout = uiState.serverLayout!!,
-                        selectedChannelId = uiState.selectedChannelId,
-                        voiceMembers = uiState.voiceMembers,
-                        inVoiceChannelId = uiState.inVoiceChannelId,
-                        onChannelClick = onChannelClick,
-                        onVoiceJoin = onVoiceJoin,
-                        onVoiceLeave = onVoiceLeave,
-                        presence = uiState.presence
-                    )
-                }
-                uiState.activeTab == MainTab.HOME || uiState.activeTab == MainTab.DMS -> {
-                    DmList(
-                        dms = uiState.dms,
-                        selectedDmId = uiState.selectedDmId,
-                        presence = uiState.presence,
-                        onDmClick = onDmClick
-                    )
-                }
-                else -> {
-                    DmList(
-                        dms = uiState.dms,
-                        selectedDmId = uiState.selectedDmId,
-                        presence = uiState.presence,
-                        onDmClick = onDmClick
-                    )
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    uiState.activeTab == MainTab.SERVERS && uiState.selectedServerId != null -> {
+                        ServerChannelList(
+                            layout = uiState.layout,
+                            selectedChannelId = uiState.selectedChannelId,
+                            voiceByChannel = uiState.voiceByChannel,
+                            inVoiceChannelId = uiState.inVoiceChannelId,
+                            onChannelClick = onChannelClick,
+                            onVoiceJoin = onVoiceJoin,
+                            onVoiceLeave = onVoiceLeave
+                        )
+                    }
+                    else -> {
+                        DmList(
+                            dms = uiState.dms,
+                            selectedDmId = uiState.selectedDmId,
+                            presence = uiState.presence,
+                            onDmClick = onDmClick
+                        )
+                    }
                 }
             }
-        }
 
-        // Voice bar
-        if (uiState.inVoiceChannelId != null) {
-            VoiceBar(
-                isMuted = uiState.isMuted,
-                isDeafened = uiState.isDeafened,
-                onToggleMute = onToggleMute,
-                onToggleDeafen = onToggleDeafen,
-                onLeave = onVoiceLeave
+            if (uiState.inVoiceChannelId != null) {
+                VoiceBar(
+                    isMuted = uiState.isMuted,
+                    isDeafened = uiState.isDeafened,
+                    onToggleMute = onToggleMute,
+                    onToggleDeafen = onToggleDeafen,
+                    onLeave = onVoiceLeave
+                )
+            }
+
+            UserBar(
+                displayName = uiState.currentDisplayName,
+                username = uiState.currentUsername,
+                onLogout = onLogout
             )
         }
-
-        // User bar
-        UserBar(
-            displayName = uiState.currentDisplayName,
-            username = uiState.currentUsername,
-            userId = uiState.currentUserId,
-            onLogout = onLogout
-        )
     }
 }
 
 @Composable
 private fun SidebarHeader(uiState: MainUiState, onAddFriendClick: () -> Unit) {
-    val serverName = uiState.servers.find { it.id == uiState.selectedServerId }?.name
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .background(BanterColors.ChannelSidebar)
+            .height(56.dp)
             .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = serverName ?: when (uiState.activeTab) {
-                    MainTab.HOME, MainTab.DMS -> "Direct Messages"
-                    else -> "Banter"
-                },
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = BanterColors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            if (uiState.activeTab == MainTab.HOME || uiState.activeTab == MainTab.DMS) {
-                IconButton(onClick = onAddFriendClick, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.PersonAdd, contentDescription = "Add Friend",
-                        tint = BanterColors.TextSecondary, modifier = Modifier.size(18.dp))
-                }
+        Text(
+            text = when {
+                uiState.activeTab == MainTab.SERVERS && uiState.selectedServerName.isNotBlank() ->
+                    uiState.selectedServerName
+                else -> "Direct Messages"
+            },
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            color = BanterColors.TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (uiState.activeTab == MainTab.HOME) {
+            IconButton(onClick = onAddFriendClick, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Filled.PersonAdd,
+                    contentDescription = "Add Friend",
+                    tint = BanterColors.TextSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
@@ -158,55 +163,51 @@ private fun SidebarHeader(uiState: MainUiState, onAddFriendClick: () -> Unit) {
 
 @Composable
 private fun ServerChannelList(
-    layout: com.banter.android.data.model.ServerLayout,
+    layout: List<CategoryLayout>,
     selectedChannelId: Long?,
-    voiceMembers: List<com.banter.android.data.model.VoiceMember>,
+    voiceByChannel: Map<Long, List<VoiceMember>>,
     inVoiceChannelId: Long?,
-    presence: Map<Long, com.banter.android.data.model.PresenceEntry>,
-    onChannelClick: (Long) -> Unit,
+    onChannelClick: (Long, String) -> Unit,
     onVoiceJoin: (Long) -> Unit,
     onVoiceLeave: () -> Unit
 ) {
-    val categorized = layout.channels.groupBy { it.categoryId }
-    val uncategorized = categorized[null] ?: emptyList()
-    val categories = layout.categories.sortedBy { it.position }
+    val sorted = layout.sortedBy { it.category.position }
 
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(vertical = 8.dp)) {
-        // Uncategorized channels
-        items(uncategorized.filter { it.kind == "text" }) { channel ->
-            ChannelRow(
-                channel = channel,
-                isSelected = channel.id == selectedChannelId,
-                onClick = { onChannelClick(channel.id) }
-            )
-        }
-
-        // Categories + their channels
-        categories.forEach { category ->
-            item(key = "cat_${category.id}") {
-                CategoryRow(category)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(vertical = 8.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
+    ) {
+        if (sorted.isEmpty()) {
+            item {
+                Text(
+                    "No channels yet",
+                    color = BanterColors.TextMuted,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(16.dp)
+                )
             }
-            val channelsInCat = (categorized[category.id] ?: emptyList()).sortedBy { it.position }
-            items(channelsInCat, key = { it.id }) { channel ->
+        }
+        sorted.forEach { catLayout ->
+            item(key = "cat_${catLayout.category.id}") {
+                CategoryRow(catLayout.category.name)
+            }
+            val channels = catLayout.channels.sortedBy { it.position }
+            items(channels, key = { it.id }) { channel ->
                 when (channel.kind) {
-                    "text", "board" -> ChannelRow(
+                    "voice" -> VoiceChannelRow(
+                        channel = channel,
+                        members = voiceByChannel[channel.id].orEmpty(),
+                        inVoice = inVoiceChannelId == channel.id,
+                        onClick = {
+                            if (inVoiceChannelId == channel.id) onVoiceLeave()
+                            else onVoiceJoin(channel.id)
+                        }
+                    )
+                    else -> ChannelRow(
                         channel = channel,
                         isSelected = channel.id == selectedChannelId,
-                        onClick = { onChannelClick(channel.id) }
+                        onClick = { onChannelClick(channel.id, channel.name) }
                     )
-                    "voice" -> {
-                        val members = voiceMembers.filter { it.channelId == channel.id }
-                        VoiceChannelRow(
-                            channel = channel,
-                            members = members,
-                            presence = presence,
-                            inVoice = inVoiceChannelId == channel.id,
-                            onClick = {
-                                if (inVoiceChannelId == channel.id) onVoiceLeave()
-                                else onVoiceJoin(channel.id)
-                            }
-                        )
-                    }
                 }
             }
         }
@@ -214,18 +215,22 @@ private fun ServerChannelList(
 }
 
 @Composable
-private fun CategoryRow(category: Category) {
+private fun CategoryRow(name: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 8.dp, top = 16.dp, bottom = 2.dp, end = 8.dp),
+            .padding(start = 8.dp, top = 14.dp, bottom = 2.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
-            tint = BanterColors.CategoryText, modifier = Modifier.size(16.dp))
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = null,
+            tint = BanterColors.CategoryText,
+            modifier = Modifier.size(16.dp)
+        )
         Spacer(Modifier.width(2.dp))
         Text(
-            text = category.name.uppercase(),
+            text = name.uppercase(),
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             color = BanterColors.CategoryText,
@@ -235,33 +240,25 @@ private fun CategoryRow(category: Category) {
 }
 
 @Composable
-private fun ChannelRow(
-    channel: Channel,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val icon = when (channel.kind) {
-        "board" -> Icons.Filled.Dashboard
-        else -> Icons.Filled.Tag
-    }
-
+private fun ChannelRow(channel: Channel, isSelected: Boolean, onClick: () -> Unit) {
+    val icon = if (channel.kind == "board") Icons.Filled.Dashboard else Icons.Filled.Tag
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (isSelected) BanterColors.ChannelRowActive else Color.Transparent)
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 7.dp),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             icon,
             contentDescription = null,
             tint = if (isSelected) BanterColors.ChannelTextActive else BanterColors.ChannelText,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(20.dp)
         )
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(8.dp))
         Text(
             text = channel.name,
             fontSize = 15.sp,
@@ -276,8 +273,7 @@ private fun ChannelRow(
 @Composable
 private fun VoiceChannelRow(
     channel: Channel,
-    members: List<com.banter.android.data.model.VoiceMember>,
-    presence: Map<Long, com.banter.android.data.model.PresenceEntry>,
+    members: List<VoiceMember>,
     inVoice: Boolean,
     onClick: () -> Unit
 ) {
@@ -286,16 +282,19 @@ private fun VoiceChannelRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 1.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .background(if (inVoice) BanterColors.ChannelRowActive else Color.Transparent)
-                .clickable { onClick() }
-                .padding(horizontal = 8.dp, vertical = 7.dp),
+                .clickable(onClick = onClick)
+                .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.VolumeUp, contentDescription = null,
+            Icon(
+                Icons.Filled.VolumeUp,
+                contentDescription = null,
                 tint = if (inVoice) BanterColors.VoiceConnected else BanterColors.ChannelText,
-                modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(8.dp))
             Text(
                 text = channel.name,
                 fontSize = 15.sp,
@@ -305,35 +304,38 @@ private fun VoiceChannelRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            if (inVoice) {
-                Icon(Icons.Filled.ExitToApp, contentDescription = "Leave",
-                    tint = BanterColors.Red, modifier = Modifier.size(16.dp))
-            }
         }
-        // Voice members
         members.forEach { vm ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 36.dp, end = 8.dp, bottom = 2.dp),
+                    .padding(start = 40.dp, end = 8.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
-                        .background(BanterColors.ServerIconBg),
+                        .background(avatarColor(vm.userId)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("?", fontSize = 10.sp, color = Color.White)
+                    Text("·", color = Color.White, fontSize = 12.sp)
                 }
-                Spacer(Modifier.width(6.dp))
-                Text("User ${vm.userId}", fontSize = 13.sp, color = BanterColors.TextSecondary,
-                    maxLines = 1)
-                if (vm.muted) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "User ${vm.userId}",
+                    fontSize = 13.sp,
+                    color = BanterColors.TextSecondary,
+                    maxLines = 1
+                )
+                if (vm.flags.muted) {
                     Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Filled.MicOff, contentDescription = "Muted",
-                        tint = BanterColors.TextMuted, modifier = Modifier.size(12.dp))
+                    Icon(
+                        Icons.Filled.MicOff,
+                        contentDescription = "Muted",
+                        tint = BanterColors.TextMuted,
+                        modifier = Modifier.size(12.dp)
+                    )
                 }
             }
         }
@@ -342,12 +344,15 @@ private fun VoiceChannelRow(
 
 @Composable
 private fun DmList(
-    dms: List<Dm>,
+    dms: List<DirectChat>,
     selectedDmId: Long?,
     presence: Map<Long, com.banter.android.data.model.PresenceEntry>,
-    onDmClick: (Long) -> Unit
+    onDmClick: (Long, String) -> Unit
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(vertical = 8.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(vertical = 4.dp),
+        contentPadding = PaddingValues(bottom = 8.dp)
+    ) {
         item {
             Text(
                 "DIRECT MESSAGES",
@@ -355,16 +360,25 @@ private fun DmList(
                 fontWeight = FontWeight.SemiBold,
                 color = BanterColors.CategoryText,
                 letterSpacing = 0.5.sp,
-                modifier = Modifier.padding(start = 16.dp, bottom = 4.dp, top = 8.dp)
+                modifier = Modifier.padding(start = 16.dp, bottom = 6.dp, top = 10.dp)
             )
         }
-        items(dms) { dm ->
-            val presenceState = presence[dm.peerId]?.state ?: "offline"
+        if (dms.isEmpty()) {
+            item {
+                Text(
+                    "No direct messages yet.\nOpen a friend to start chatting.",
+                    color = BanterColors.TextMuted,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+        }
+        items(dms, key = { it.id }) { dm ->
             DmRow(
                 dm = dm,
                 isSelected = dm.id == selectedDmId,
-                presenceState = presenceState,
-                onClick = { onDmClick(dm.id) }
+                presenceState = presence[dm.peerId]?.state ?: "offline",
+                onClick = { onDmClick(dm.id, dm.peerDisplayName) }
             )
         }
     }
@@ -372,7 +386,7 @@ private fun DmList(
 
 @Composable
 private fun DmRow(
-    dm: Dm,
+    dm: DirectChat,
     isSelected: Boolean,
     presenceState: String,
     onClick: () -> Unit
@@ -381,58 +395,55 @@ private fun DmRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (isSelected) BanterColors.ChannelRowActive else Color.Transparent)
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 7.dp),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box {
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
-                    .background(BanterColors.ServerIconBg),
+                    .background(avatarColor(dm.peerId)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    dm.peerDisplayName.take(1).uppercase(),
+                    dm.peerDisplayName.take(1).uppercase().ifEmpty { "?" },
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
             }
-            // Presence dot
             Box(
                 modifier = Modifier
-                    .size(10.dp)
+                    .size(12.dp)
                     .clip(CircleShape)
                     .background(BanterColors.ChannelSidebar)
+                    .align(Alignment.BottomEnd)
                     .padding(2.dp)
                     .clip(CircleShape)
                     .background(presenceColor(presenceState))
-                    .align(Alignment.BottomEnd)
             )
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Column {
             Text(
-                text = dm.peerDisplayName,
-                fontSize = 14.sp,
+                text = dm.peerDisplayName.ifBlank { dm.peerUsername },
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = if (isSelected) BanterColors.TextPrimary else BanterColors.ChannelText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            dm.lastMessage?.let { msg ->
-                Text(
-                    text = msg.content.take(30),
-                    fontSize = 11.sp,
-                    color = BanterColors.TextMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = "@${dm.peerUsername}",
+                fontSize = 12.sp,
+                color = BanterColors.TextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -450,83 +461,104 @@ private fun VoiceBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(BanterColors.VoiceBar)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Filled.VolumeUp, contentDescription = null,
-            tint = BanterColors.VoiceConnected, modifier = Modifier.size(16.dp))
+        Icon(
+            Icons.Filled.VolumeUp,
+            contentDescription = null,
+            tint = BanterColors.VoiceConnected,
+            modifier = Modifier.size(16.dp)
+        )
         Spacer(Modifier.width(6.dp))
-        Text("Voice Connected", fontSize = 12.sp, color = BanterColors.VoiceConnected,
-            modifier = Modifier.weight(1f))
-        IconButton(onClick = onToggleMute, modifier = Modifier.size(28.dp)) {
+        Text(
+            "Voice Connected",
+            fontSize = 12.sp,
+            color = BanterColors.VoiceConnected,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onToggleMute, modifier = Modifier.size(32.dp)) {
             Icon(
                 if (isMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
                 contentDescription = if (isMuted) "Unmute" else "Mute",
                 tint = if (isMuted) BanterColors.Red else BanterColors.TextSecondary,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
-        IconButton(onClick = onToggleDeafen, modifier = Modifier.size(28.dp)) {
+        IconButton(onClick = onToggleDeafen, modifier = Modifier.size(32.dp)) {
             Icon(
                 if (isDeafened) Icons.Filled.HeadsetOff else Icons.Filled.Headset,
                 contentDescription = if (isDeafened) "Undeafen" else "Deafen",
                 tint = if (isDeafened) BanterColors.Red else BanterColors.TextSecondary,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
-        IconButton(onClick = onLeave, modifier = Modifier.size(28.dp)) {
-            Icon(Icons.Filled.CallEnd, contentDescription = "Leave Voice",
-                tint = BanterColors.Red, modifier = Modifier.size(16.dp))
+        IconButton(onClick = onLeave, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Filled.CallEnd,
+                contentDescription = "Leave Voice",
+                tint = BanterColors.Red,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun UserBar(
-    displayName: String,
-    username: String,
-    userId: Long,
-    onLogout: () -> Unit
-) {
+private fun UserBar(displayName: String, username: String, onLogout: () -> Unit) {
     HorizontalDivider(color = BanterColors.Divider)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(BanterColors.ModalBackgroundDark)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(36.dp)
                 .clip(CircleShape)
                 .background(BanterColors.Blurple),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                displayName.take(1).uppercase(),
+                displayName.take(1).uppercase().ifEmpty { "?" },
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(displayName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                color = BanterColors.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(username, fontSize = 11.sp, color = BanterColors.TextMuted,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                displayName,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BanterColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                username,
+                fontSize = 12.sp,
+                color = BanterColors.TextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
-        IconButton(onClick = onLogout, modifier = Modifier.size(28.dp)) {
-            Icon(Icons.Filled.Logout, contentDescription = "Logout",
-                tint = BanterColors.TextSecondary, modifier = Modifier.size(16.dp))
+        IconButton(onClick = onLogout, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Filled.Logout,
+                contentDescription = "Logout",
+                tint = BanterColors.TextSecondary,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
 
-fun presenceColor(state: String) = when (state) {
+fun presenceColor(state: String) = when (state.lowercase()) {
     "online" -> BanterColors.Online
     "idle" -> BanterColors.Idle
-    "dnd" -> BanterColors.Dnd
     else -> BanterColors.Offline
 }

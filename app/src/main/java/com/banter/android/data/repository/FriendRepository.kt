@@ -11,13 +11,13 @@ class FriendRepository @Inject constructor(private val api: BanterApi) {
     suspend fun listFriends(): Result<List<Friend>> = runCatching {
         val r = api.listFriends()
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
-        r.body()!!
+        r.body() ?: emptyList()
     }
 
-    suspend fun listRequests(): Result<List<FriendRequest>> = runCatching {
+    suspend fun listRequests(): Result<FriendRequestsResponse> = runCatching {
         val r = api.listFriendRequests()
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
-        r.body()!!
+        r.body() ?: FriendRequestsResponse()
     }
 
     suspend fun sendRequest(username: String): Result<FriendRequest> = runCatching {
@@ -26,10 +26,9 @@ class FriendRepository @Inject constructor(private val api: BanterApi) {
         r.body()!!
     }
 
-    suspend fun acceptRequest(id: Long): Result<Friend> = runCatching {
+    suspend fun acceptRequest(id: Long): Result<Unit> = runCatching {
         val r = api.acceptFriendRequest(id)
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
-        r.body()!!
     }
 
     suspend fun declineRequest(id: Long): Result<Unit> = runCatching {
@@ -40,6 +39,6 @@ class FriendRepository @Inject constructor(private val api: BanterApi) {
     suspend fun listPresence(): Result<List<PresenceEntry>> = runCatching {
         val r = api.listPresence()
         if (!r.isSuccessful) error(r.errorBody()?.string() ?: "Failed")
-        r.body()!!
+        r.body() ?: emptyList()
     }
 }

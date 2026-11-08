@@ -56,9 +56,11 @@ class AuthViewModel @Inject constructor(
         _uiState.value = AuthUiState()
     }
 
-    fun saveServerUrl(url: String) {
+    fun saveServerUrl(url: String, onDone: (() -> Unit)? = null) {
         viewModelScope.launch {
-            sessionStore.saveServerUrl(url)
+            val normalized = url.trim().trimEnd('/')
+            sessionStore.saveServerUrl(normalized.ifEmpty { "http://127.0.0.1:3970" })
+            onDone?.invoke()
         }
     }
 }
