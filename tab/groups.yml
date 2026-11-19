@@ -1,31 +1,27 @@
 # Must be in plugins/TAB/groups.yml (alongside config.yml), then /tab reload
 #
-# Uses ViaVersion's PlaceholderAPI expansion (not TAB's %player-version%).
-# TAB's own placeholder prints "Unknown" when the client protocol is newer
-# than TAB's built-in list — ViaVersion's list stays current.
-#
-# One-time setup on the SAME server as TAB + ViaVersion:
-#   /papi ecloud download ViaVersion
-#   /papi reload
-#   /tab reload
+# No PlaceholderAPI required.
+# Uses %player-version-id% (raw ViaVersion protocol id). Friendly names come
+# from placeholder-output-replacements in config.yml — avoids TAB's
+# %player-version% printing "Unknown" when its built-in list is behind.
 #
 # Or apply in-game:
-#   /tab group _DEFAULT_ tabprefix "&8[&7%viaversion_player_protocol_version%&8] "
+#   /tab group _DEFAULT_ tabprefix "&8[&7%player-version-id%&8] "
 
 Owner:
-  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
+  tabprefix: "&8[&7%player-version-id%&8] "
 Admin:
-  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
+  tabprefix: "&8[&7%player-version-id%&8] "
 Mod:
-  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
+  tabprefix: "&8[&7%player-version-id%&8] "
 Helper:
-  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
+  tabprefix: "&8[&7%player-version-id%&8] "
 builder:
-  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
+  tabprefix: "&8[&7%player-version-id%&8] "
 vip:
-  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
+  tabprefix: "&8[&7%player-version-id%&8] "
 default:
-  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
+  tabprefix: "&8[&7%player-version-id%&8] "
 
 _DEFAULT_:
-  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
+  tabprefix: "&8[&7%player-version-id%&8] "
