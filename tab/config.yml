@@ -1,5 +1,11 @@
 # Vanilla-style TAB config
-# Pair with groups.yml (version prefix uses ViaVersion via %player-version%)
+#
+# IMPORTANT: also install groups.yml from this folder into plugins/TAB/
+# (version next to names is configured there, not in this file).
+# Then run: /tab reload
+#
+# Version uses TAB's %player-version% (ViaVersion on the SAME server as TAB,
+# or the proxy API if TAB is installed on Bungee/Velocity).
 
 # https://github.com/NEZNAMY/TAB/wiki/Feature-guide:-Header-&-Footer
 header-footer:
@@ -10,7 +16,7 @@ header-footer:
       footer:
         - ""
         - "&7Memory: &f%memory-used%&7/&f%memory-max% MB"
-        - "&7Online: &f%online% &8| &7Ping: &f%ping%ms &8| &7TPS: &f%server_tps_1%"
+        - "&7Online: &f%online% &8| &7Ping: &f%ping%ms"
 
 # https://github.com/NEZNAMY/TAB/wiki/Feature-guide:-Tablist-name-formatting
 # Prefix/suffix live in groups.yml (_DEFAULT_ tabprefix = client version)
@@ -99,7 +105,6 @@ conditions: {}
 
 placeholder-refresh-intervals:
   default-refresh-interval: 500
-  "%server_tps_1%": 1000
   "%memory-used%": 1000
 
 assign-groups-by-permissions: false

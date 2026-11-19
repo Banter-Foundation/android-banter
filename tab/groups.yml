@@ -1,5 +1,28 @@
-# Version left of username (TAB + ViaVersion on the same server/proxy)
-# %player-version% comes from ViaVersion when TAB is on a backend server,
-# or from the proxy API when TAB is on Bungee/Velocity.
+# Must be in plugins/TAB/groups.yml (alongside config.yml), then /tab reload
+#
+# Or apply in-game without editing this file:
+#   /tab group _DEFAULT_ tabprefix "&8[&7%player-version%&8] "
+#
+# %player-version% needs ViaVersion on the SAME machine as TAB (backend),
+# or install TAB on the proxy (proxy already knows the client version).
+
+# LuckPerms / Vault primary groups often match these names — set tabprefix
+# on each so an old per-group prefix cannot wipe the version.
+Owner:
+  tabprefix: "&8[&7%player-version%&8] "
+Admin:
+  tabprefix: "&8[&7%player-version%&8] "
+Mod:
+  tabprefix: "&8[&7%player-version%&8] "
+Helper:
+  tabprefix: "&8[&7%player-version%&8] "
+builder:
+  tabprefix: "&8[&7%player-version%&8] "
+vip:
+  tabprefix: "&8[&7%player-version%&8] "
+default:
+  tabprefix: "&8[&7%player-version%&8] "
+
+# Fallback for any other primary group
 _DEFAULT_:
-  tabprefix: "&7%player-version% &r"
+  tabprefix: "&8[&7%player-version%&8] "
