@@ -4,8 +4,10 @@
 # (version next to names is configured there, not in this file).
 # Then run: /tab reload
 #
-# Version uses TAB's %player-version% (ViaVersion on the SAME server as TAB,
-# or the proxy API if TAB is installed on Bungee/Velocity).
+# Client version in tablist uses ViaVersion via PlaceholderAPI:
+#   /papi ecloud download ViaVersion
+#   /papi reload
+# ViaVersion must be on the SAME server as TAB (not proxy-only).
 
 # https://github.com/NEZNAMY/TAB/wiki/Feature-guide:-Header-&-Footer
 header-footer:

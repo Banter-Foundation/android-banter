@@ -1,28 +1,31 @@
 # Must be in plugins/TAB/groups.yml (alongside config.yml), then /tab reload
 #
-# Or apply in-game without editing this file:
-#   /tab group _DEFAULT_ tabprefix "&8[&7%player-version%&8] "
+# Uses ViaVersion's PlaceholderAPI expansion (not TAB's %player-version%).
+# TAB's own placeholder prints "Unknown" when the client protocol is newer
+# than TAB's built-in list — ViaVersion's list stays current.
 #
-# %player-version% needs ViaVersion on the SAME machine as TAB (backend),
-# or install TAB on the proxy (proxy already knows the client version).
+# One-time setup on the SAME server as TAB + ViaVersion:
+#   /papi ecloud download ViaVersion
+#   /papi reload
+#   /tab reload
+#
+# Or apply in-game:
+#   /tab group _DEFAULT_ tabprefix "&8[&7%viaversion_player_protocol_version%&8] "
 
-# LuckPerms / Vault primary groups often match these names — set tabprefix
-# on each so an old per-group prefix cannot wipe the version.
 Owner:
-  tabprefix: "&8[&7%player-version%&8] "
+  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
 Admin:
-  tabprefix: "&8[&7%player-version%&8] "
+  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
 Mod:
-  tabprefix: "&8[&7%player-version%&8] "
+  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
 Helper:
-  tabprefix: "&8[&7%player-version%&8] "
+  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
 builder:
-  tabprefix: "&8[&7%player-version%&8] "
+  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
 vip:
-  tabprefix: "&8[&7%player-version%&8] "
+  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
 default:
-  tabprefix: "&8[&7%player-version%&8] "
+  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
 
-# Fallback for any other primary group
 _DEFAULT_:
-  tabprefix: "&8[&7%player-version%&8] "
+  tabprefix: "&8[&7%viaversion_player_protocol_version%&8] "
