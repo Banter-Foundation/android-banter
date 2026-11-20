@@ -1,0 +1,223 @@
+# Vanilla-style TAB config
+#
+# IMPORTANT: also install groups.yml from this folder into plugins/TAB/
+# (version next to names is configured there, not in this file).
+# Then run: /tab reload
+#
+# No PlaceholderAPI needed. Version uses %player-version-id% (ViaVersion
+# protocol id) + the map below. ViaVersion must be on the SAME server as TAB.
+
+# https://github.com/NEZNAMY/TAB/wiki/Feature-guide:-Header-&-Footer
+header-footer:
+  enabled: true
+  designs:
+    default:
+      header: []
+      footer:
+        - ""
+        # Change 1.21.1 to whatever version your server jar is on
+        - "&7Server: &f1.21.1"
+        - "&7Memory: &f%memory-used%&7/&f%memory-max% MB"
+        - "&7Online: &f%online% &8| &7Ping: &f%ping%ms"
+
+# https://github.com/NEZNAMY/TAB/wiki/Feature-guide:-Tablist-name-formatting
+# Prefix/suffix live in groups.yml (_DEFAULT_ tabprefix = client version)
+tablist-name-formatting:
+  enabled: true
+  disable-condition: '%world%=disabledworld'
+
+# https://github.com/NEZNAMY/TAB/wiki/Feature-guide:-Nametags
+scoreboard-teams:
+  enabled: true
+  enable-collision: true
+  invisible-nametags: false
+  sorting-types:
+    - "PLACEHOLDER_A_TO_Z:%player%"
+  case-sensitive-sorting: false
+  can-see-friendly-invisibles: false
+  disable-condition: '%world%=disabledworld'
+
+# Vanilla already shows ping bars — leave this off
+playerlist-objective:
+  enabled: false
+  value: "%ping%"
+  fancy-value: "&7%ping%"
+  title: "TAB"
+  render-type: INTEGER
+  disable-condition: '%world%=disabledworld'
+
+belowname-objective:
+  enabled: false
+  value: "%health%"
+  fancy-value: "&c%health%"
+  fancy-value-default: "NPC"
+  title: "&cHealth"
+  disable-condition: '%world%=disabledworld'
+
+prevent-spectator-effect:
+  enabled: false
+
+bossbar:
+  enabled: false
+  toggle-command: /bossbar
+  remember-toggle-choice: false
+  hidden-by-default: false
+  bars: {}
+
+scoreboard:
+  enabled: false
+  toggle-command: /sb
+  remember-toggle-choice: false
+  hidden-by-default: false
+  delay-on-join-milliseconds: 0
+  scoreboards: {}
+
+layout:
+  enabled: false
+  direction: COLUMNS
+  default-skin: mineskin:37e93c8e12cd426cb28fce31969e0674
+  enable-remaining-players-text: true
+  remaining-players-text: '... and %s more'
+  empty-slot-ping-value: 1000
+  layouts: {}
+
+ping-spoof:
+  enabled: false
+  value: 0
+
+global-playerlist:
+  enabled: false
+  display-others-as-spectators: false
+  display-vanished-players-as-spectators: true
+  isolate-unlisted-servers: false
+  update-latency: false
+  spy-servers: []
+  server-groups: {}
+
+placeholders:
+  date-format: "dd.MM.yyyy"
+  time-format: "HH:mm"
+  time-offset: 0
+  register-tab-expansion: false
+  locale: en-US
+
+# Map raw ViaVersion protocol ids → readable MC versions (no PAPI).
+# Unmapped ids still show as the number instead of "Unknown".
+placeholder-output-replacements:
+  "%player-version-id%":
+    "47": "1.8.9"
+    "107": "1.9"
+    "108": "1.9.1"
+    "109": "1.9.2"
+    "110": "1.9.4"
+    "210": "1.10.2"
+    "315": "1.11"
+    "316": "1.11.2"
+    "335": "1.12"
+    "338": "1.12.1"
+    "340": "1.12.2"
+    "393": "1.13"
+    "401": "1.13.1"
+    "404": "1.13.2"
+    "477": "1.14"
+    "480": "1.14.1"
+    "485": "1.14.2"
+    "490": "1.14.3"
+    "498": "1.14.4"
+    "573": "1.15"
+    "575": "1.15.1"
+    "578": "1.15.2"
+    "735": "1.16"
+    "736": "1.16.1"
+    "751": "1.16.2"
+    "753": "1.16.3"
+    "754": "1.16.5"
+    "755": "1.17"
+    "756": "1.17.1"
+    "757": "1.18.1"
+    "758": "1.18.2"
+    "759": "1.19"
+    "760": "1.19.2"
+    "761": "1.19.3"
+    "762": "1.19.4"
+    "763": "1.20.1"
+    "764": "1.20.2"
+    "765": "1.20.4"
+    "766": "1.20.6"
+    "767": "1.21.1"
+    "768": "1.21.3"
+    "769": "1.21.4"
+    "770": "1.21.5"
+    "771": "1.21.6"
+    "772": "1.21.8"
+    "773": "1.21.10"
+    "774": "1.21.11"
+    "775": "26.1"
+    "776": "26.2"
+    "777": "26.3"
+
+conditions: {}
+
+placeholder-refresh-intervals:
+  default-refresh-interval: 500
+  "%memory-used%": 1000
+
+assign-groups-by-permissions: false
+
+primary-group-finding-list:
+  - Owner
+  - Admin
+  - Mod
+  - Helper
+  - default
+
+permission-refresh-interval: 1000
+
+debug: false
+
+mysql:
+  enabled: false
+  host: 127.0.0.1
+  port: 3306
+  database: tab
+  username: user
+  password: password
+  useSSL: true
+
+proxy-support:
+  enabled: true
+  channel-name-suffix: "TAB"
+  type: PLUGIN
+  plugin:
+    name: RedisBungee
+  redis:
+    url: 'redis://:password@localhost:6379/0'
+  rabbitmq:
+    exchange: 'plugin'
+    url: 'amqp://guest:guest@localhost:5672/%2F'
+
+components:
+  minimessage-support: true
+  disable-shadow-for-heads: true
+
+# Internal value, do not change this
+config-version: 6
+
+########################################################################
+# BUKKIT ONLY - THE FOLLOWING SECTION IS ONLY FOR BACKEND INSTALLATION #
+########################################################################
+
+per-world-playerlist:
+  enabled: false
+  allow-bypass-permission: false
+  ignore-effect-in-worlds: []
+  shared-playerlist-world-groups: {}
+
+compensate-for-packetevents-bug: false
+
+#####################################################################
+# PROXY ONLY - THE FOLLOWING SECTION IS ONLY FOR PROXY INSTALLATION #
+#####################################################################
+
+use-bukkit-permissions-manager: false
+use-online-uuid-in-tablist: true
